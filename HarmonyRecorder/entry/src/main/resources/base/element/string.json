@@ -1,0 +1,20 @@
+{
+  "string": [
+    {
+      "name": "module_desc",
+      "value": "Facilis Recording 主应用模块"
+    },
+    {
+      "name": "EntryAbility_desc",
+      "value": "本地 WAV 与 M4A 录音、管理和播放"
+    },
+    {
+      "name": "EntryAbility_label",
+      "value": "Facilis Recording"
+    },
+    {
+      "name": "microphone_permission_reason",
+      "value": "仅在你主动录音时采集声音并保存到本地"
+    }
+  ]
+}

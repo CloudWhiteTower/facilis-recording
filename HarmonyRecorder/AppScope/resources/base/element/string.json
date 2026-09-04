@@ -1,0 +1,12 @@
+{
+  "string": [
+    {
+      "name": "app_name",
+      "value": "Facilis Recording"
+    },
+    {
+      "name": "app_description",
+      "value": "简洁、离线优先的鸿蒙原生录音工具"
+    }
+  ]
+}

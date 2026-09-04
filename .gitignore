@@ -1,0 +1,44 @@
+# Codex and editor-local state
+.codex/
+**/.codex/
+**/.cursor/
+**/.trae/
+**/.idea/
+**/.appanalyzer/
+**/.test/
+**/.mcp.json
+
+# HarmonyOS / Hvigor outputs and local dependencies
+**/.hvigor/
+**/oh_modules/
+**/build/
+**/entry/build/
+**/local.properties
+
+# Signing and provisioning material must never be published
+*.p12
+*.pfx
+*.jks
+*.keystore
+*.key
+*.pem
+*.cer
+*.csr
+*.p7b
+
+# Packaged artifacts are uploaded as GitHub Release assets
+dist/
+*.app
+*.hap
+*.hsp
+*.har
+*.zip
+*.sha256
+
+# Third-party visual references are retained locally only
+data/motiv-audio-reference/
+
+# Operating-system noise
+.DS_Store
+Thumbs.db
+desktop.ini
