@@ -54,7 +54,7 @@ devecocli build --product default --build-mode release
 
 ## 下载与发布状态
 
-- GitHub Release 提供 Release APP、模拟器验收 HAP、源码归档和 SHA-256 校验文件。
+- GitHub Release 提供 ZIP 封装的 Release APP、模拟器验收 HAP、源码归档和 SHA-256 校验文件。
 - Release APP 已完成本地 Release 构建，但当前仅作为 AGC 签名/重签名前的交付件；它不是已经通过华为应用市场审核的安装包。
 - 用户已在 Pura 90 与 MatePad Pro 13 模拟器完成核心功能验收；设备测试 19/19 通过。
 
