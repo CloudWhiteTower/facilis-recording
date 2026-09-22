@@ -10,7 +10,7 @@ HarmonyOS Stage ArkTS 本地录音应用。它实现了选择质量 → 开始 �
 - 录音状态机：`IDLE → RECORDING → PAUSED → RECORDING → STOPPED`。
 - 存储：文件保存在应用私有目录 `files/recordings/`，以 `Recording_YYYYMMDD_HHMMSS.{wav|m4a}` 命名；同目录中的 `recordings.index` 保存时长和格式元数据。
 - 播放：使用 `AVPlayer`，支持播放、暂停、当前进度、总时长和 Seek。
-- 波形与大小：WAV 根据当前 16/24-bit PCM 数据计算滚动 RMS；M4A 使用 `AVRecorder.getAudioCapturerMaxAmplitude()` 获取真实录制振幅。两种格式均显示录制中的文件大小。
+- 波形与大小：WAV 根据当前 16/24-bit PCM 数据计算滚动 RMS；M4A 使用 `AVRecorder.getAudioCapturerMaxAmplitude()` 获取真实录制振幅。Canvas 将振幅包络绘为连续曲线，单调三次插值保留采样极值；暂停冻结，停止清空。两种格式均显示录制中的文件大小。
 - 文件管理：支持重命名、最近删除、恢复、永久删除；WAV 可实际导出 raw PCM，原始录音和 PCM 可调用系统分享面板。
 - 外观：橙色主色，支持应用内浅色/深色切换；切换时同步应用级 `setColorMode()`，系统菜单与弹窗跟随当前模式。
 - 布局：使用 ArkUI 原生组件，支持 phone/tablet 的 600 vp 响应式布局。
@@ -77,6 +77,10 @@ devecocli emulator start 'Pura 90'
 公开仓库不包含签名材料。首次部署前，请在 DevEco Studio 中为自己的应用包名配置调试签名；正式发布则使用 AGC 云管理签名或自己的发布证书和 Release Profile。
 
 ## 验证状态
+
+2026-09-23 v2 开发版：Debug、Release、ohosTest 构建通过，本机模型检查 37/37、API 24 手机设备单元测试 35/35 通过。已检查亮暗录音页、质量 Sheet 和暗色 Select。当前模拟器不报告 HDS 高级材质支持，使用系统模糊与轻量光感；API 26 原生材质及新曲线的真实录音体验仍待相应设备/用户验收。详见 [v2 记录](../docs/V2_IMPLEMENTATION.md)。
+
+以下为 v1 已验收基线：
 
 - `devecocli build`：通过。
 - `devecocli build --modules entry@ohosTest`：通过；Pura 90 设备测试 19/19 通过。

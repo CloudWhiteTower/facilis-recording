@@ -15,16 +15,19 @@
 
 // Modified for Facilis Recording, 2026.
 
-import { AbilityConstant, ConfigurationConstant, UIAbility, Want } from '@kit.AbilityKit';
+import { AbilityConstant, UIAbility, Want } from '@kit.AbilityKit';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { window } from '@kit.ArkUI';
+import { ThemeMode, ThemeStore } from '../utils/HarmonyTheme';
+import { NavigationStore } from '../utils/NavigationStore';
 
 const DOMAIN = 0x0000;
 
 export default class EntryAbility extends UIAbility {
   onCreate(want: Want, launchParam: AbilityConstant.LaunchParam): void {
     try {
-      this.context.getApplicationContext().setColorMode(ConfigurationConstant.ColorMode.COLOR_MODE_NOT_SET);
+      ThemeStore.initialize();
+      ThemeStore.applySystemMode(this.context, AppStorage.get<number>(ThemeStore.MODE_KEY) ?? ThemeMode.LIGHT);
     } catch (err) {
       hilog.error(DOMAIN, 'testTag', 'Failed to set colorMode. Cause: %{public}s', JSON.stringify(err));
     }
@@ -38,6 +41,12 @@ export default class EntryAbility extends UIAbility {
   onWindowStageCreate(windowStage: window.WindowStage): void {
     // Main window is created, set main page for this ability
     hilog.info(DOMAIN, 'testTag', '%{public}s', 'Ability onWindowStageCreate');
+    try {
+      ThemeStore.applyWindowMode(windowStage.getMainWindowSync(),
+        AppStorage.get<number>(ThemeStore.MODE_KEY) ?? ThemeMode.LIGHT);
+    } catch (error) {
+      hilog.warn(DOMAIN, 'FacilisTheme', 'Window theme deferred: %{public}s', String(error));
+    }
 
     windowStage.loadContent('pages/Index', (err) => {
       if (err.code) {
@@ -54,11 +63,13 @@ export default class EntryAbility extends UIAbility {
   }
 
   onForeground(): void {
+    AppStorage.setOrCreate(NavigationStore.FOREGROUND_KEY, true);
     // Ability has brought to foreground
     hilog.info(DOMAIN, 'testTag', '%{public}s', 'Ability onForeground');
   }
 
   onBackground(): void {
+    AppStorage.setOrCreate(NavigationStore.FOREGROUND_KEY, false);
     // Ability has back to background
     hilog.info(DOMAIN, 'testTag', '%{public}s', 'Ability onBackground');
   }

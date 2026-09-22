@@ -19,6 +19,32 @@ export class TimeUtils {
       `${TimeUtils.pad(date.getHours())}:${TimeUtils.pad(date.getMinutes())}`;
   }
 
+  static dateSectionKey(timestamp: number): string {
+    if (!isFinite(timestamp) || timestamp <= 0) {
+      return 'unknown';
+    }
+    const date = new Date(timestamp);
+    return `${date.getFullYear()}-${TimeUtils.pad(date.getMonth() + 1)}-${TimeUtils.pad(date.getDate())}`;
+  }
+
+  static formatDateSection(timestamp: number, now: number = Date.now()): string {
+    if (!isFinite(timestamp) || timestamp <= 0) {
+      return '更早';
+    }
+    const date = new Date(timestamp);
+    const current = new Date(now);
+    const dateStart = new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime();
+    const currentStart = new Date(current.getFullYear(), current.getMonth(), current.getDate()).getTime();
+    const dayDifference = Math.round((currentStart - dateStart) / 86400000);
+    if (dayDifference === 0) {
+      return '今天';
+    }
+    if (dayDifference === 1) {
+      return '昨天';
+    }
+    return `${date.getMonth() + 1}月${date.getDate()}日`;
+  }
+
   static createRecordingFileName(extension: string, timestamp: number): string {
     const date = new Date(timestamp);
     const datePart = `${date.getFullYear()}${TimeUtils.pad(date.getMonth() + 1)}${TimeUtils.pad(date.getDate())}`;

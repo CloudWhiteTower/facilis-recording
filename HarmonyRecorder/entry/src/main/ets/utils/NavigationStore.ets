@@ -10,10 +10,15 @@ export enum AppPage {
 export class NavigationStore {
   static readonly PAGE_KEY = 'harmony_recorder_current_page';
   static readonly ACTIVE_RECORDING_KEY = 'harmony_recorder_active_recording';
+  static readonly FOREGROUND_KEY = 'harmony_recorder_foreground';
 
   static initialize(): void {
-    AppStorage.setOrCreate(NavigationStore.PAGE_KEY, AppPage.RECORDER);
-    AppStorage.setOrCreate(NavigationStore.ACTIVE_RECORDING_KEY, false);
+    if (!AppStorage.has(NavigationStore.PAGE_KEY)) {
+      AppStorage.setOrCreate(NavigationStore.PAGE_KEY, AppPage.RECORDER);
+    }
+    if (!AppStorage.has(NavigationStore.ACTIVE_RECORDING_KEY)) {
+      AppStorage.setOrCreate(NavigationStore.ACTIVE_RECORDING_KEY, false);
+    }
   }
 
   static open(page: AppPage): void {
