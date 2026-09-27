@@ -1,0 +1,20 @@
+{
+    "programs": [
+
+    ],
+    "stream_groups": [
+
+    ],
+    "streams": [
+        {
+            "codec_name": "flac",
+            "sample_rate": "48000",
+            "channels": 1,
+            "bits_per_raw_sample": "16"
+        }
+    ],
+    "format": {
+        "duration": "39.820000",
+        "size": "981710"
+    }
+}

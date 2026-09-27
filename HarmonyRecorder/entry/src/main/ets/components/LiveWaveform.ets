@@ -1,37 +1,40 @@
 import { RecordingState } from '../models/RecordingTypes';
 import { HarmonyPalette, HarmonyTheme, ThemeMode } from '../utils/HarmonyTheme';
 import { WaveformUtils } from '../utils/WaveformUtils';
-import { WaveformMotion } from '../utils/WaveformMotion';
+import { WaveformMotion, WaveformScroll } from '../utils/WaveformMotion';
 import { WaveformCurve, WaveSegment } from '../utils/WaveformCurve';
 import { NavigationStore } from '../utils/NavigationStore';
+import { CanvasFrameDriver } from '../utils/CanvasFrameDriver';
+import { MotionTheme } from '../utils/MotionTheme';
 
 @Component
 export struct LiveWaveform {
   @Prop @Watch('onSamplesChanged') values: number[] = [];
   @Prop @Watch('onStateChanged') recordingState: RecordingState = RecordingState.IDLE;
   @Prop @Watch('onVisibilityChanged') isVisible: boolean = true;
+  @Prop sampleIntervalMs: number = WaveformMotion.SAMPLE_INTERVAL_MS;
   @Prop @Watch('requestDraw') accentColor: string = '#C85A10';
   @Prop @Watch('requestDraw') dbFloor: number = -48;
   @Prop @Watch('requestDraw') dbCeiling: number = 0;
   @StorageLink(NavigationStore.FOREGROUND_KEY) @Watch('onVisibilityChanged') private foreground: boolean = true;
+  @StorageLink(MotionTheme.REDUCE_KEY) @Watch('onVisibilityChanged') private reduceMotion: boolean = false;
   @Prop @Watch('requestDraw') themeMode: number = ThemeMode.LIGHT;
   @Prop @Watch('requestDraw') renderHeight: number = 88;
   private readonly contextSettings: RenderingContextSettings = new RenderingContextSettings(true);
   private readonly context: CanvasRenderingContext2D = new CanvasRenderingContext2D(this.contextSettings);
   private canvasWidth: number = 0;
   private canvasReady: boolean = false;
-  private frameTimer: number = -1;
-  private lastFrameAt: number = 0;
-  private sampleChangedAt: number = 0;
-  private displayedValues: number[] = [];
-  private lastScrollPhase: number = 1;
+  private areaVisible: boolean = true;
+  private previousState: RecordingState = RecordingState.IDLE;
+  private readonly frames: CanvasFrameDriver = new CanvasFrameDriver();
+  private readonly scroll: WaveformScroll = new WaveformScroll();
 
   aboutToAppear(): void {
-    this.displayedValues = this.values.slice();
+    this.scroll.reset(this.values);
   }
 
   aboutToDisappear(): void {
-    this.stopFrames();
+    this.frames.release();
     this.canvasReady = false;
   }
 
@@ -49,8 +52,12 @@ export struct LiveWaveform {
             const width = Number(newValue.width);
             if (Number.isFinite(width) && Math.abs(width - this.canvasWidth) >= 1) {
               this.canvasWidth = width;
-              this.drawWaveform();
+              this.requestDraw();
             }
+          })
+          .onVisibleAreaChange([0, 1], (visible: boolean, ratio: number): void => {
+            this.areaVisible = visible && ratio > 0;
+            this.onVisibilityChanged();
           })
       }
       .layoutWeight(1)
@@ -64,7 +71,7 @@ export struct LiveWaveform {
   }
 
   private requestDraw(): void {
-    if (this.isVisible && this.foreground) {
+    if (this.isVisible && this.foreground && this.areaVisible) {
       this.drawWaveform();
     }
   }
@@ -73,42 +80,41 @@ export struct LiveWaveform {
     if (this.recordingState !== RecordingState.RECORDING) {
       return;
     }
-    if (this.displayedValues.length === this.values.length &&
-      this.values.every((value: number, index: number): boolean => value === this.displayedValues[index])) {
+    if (this.reduceMotion || !this.isVisible || !this.foreground || !this.areaVisible) {
+      // Static mode still follows measured samples; there is no synthetic motion.
+      this.scroll.reset(this.values);
+      this.requestDraw();
       return;
     }
-    this.displayedValues = this.values.slice();
-    this.sampleChangedAt = Date.now();
+    this.scroll.offer(this.values);
   }
 
   private onStateChanged(): void {
     if (this.recordingState === RecordingState.RECORDING) {
-      this.displayedValues = this.values.slice();
-      this.sampleChangedAt = Date.now();
+      if (this.previousState !== RecordingState.PAUSED && this.previousState !== RecordingState.RECORDING) {
+        this.scroll.reset(this.values);
+      }
     } else if (!WaveformMotion.showsHistory(this.recordingState)) {
-      this.displayedValues = [];
+      this.scroll.reset([]);
     }
+    this.previousState = this.recordingState;
     this.onVisibilityChanged();
   }
 
   private onVisibilityChanged(): void {
-    this.stopFrames();
+    if (this.reduceMotion && this.recordingState === RecordingState.RECORDING) {
+      this.scroll.reset(this.values);
+    }
     this.requestDraw();
-    if (this.canvasReady && WaveformMotion.shouldAnimate(this.recordingState, this.isVisible, this.foreground)) {
-      this.frameTimer = setInterval((): void => {
-        const now = Date.now();
-        if (now - this.lastFrameAt >= WaveformMotion.FRAME_INTERVAL_MS) {
-          this.lastFrameAt = now;
+    if (this.canvasReady && WaveformMotion.shouldAnimate(this.recordingState,
+      this.isVisible && this.areaVisible, this.foreground, this.reduceMotion)) {
+      this.frames.start(this.getUIContext(), (deltaMs: number): void => {
+        if (this.scroll.advance(deltaMs, this.sampleIntervalMs)) {
           this.drawWaveform();
         }
-      }, 34);
-    }
-  }
-
-  private stopFrames(): void {
-    if (this.frameTimer >= 0) {
-      clearInterval(this.frameTimer);
-      this.frameTimer = -1;
+      });
+    } else {
+      this.frames.stop();
     }
   }
 
@@ -125,10 +131,7 @@ export struct LiveWaveform {
     }
     this.drawGuides(width, height);
 
-    if (this.recordingState === RecordingState.RECORDING) {
-      this.lastScrollPhase = WaveformMotion.scrollPhase(Date.now() - this.sampleChangedAt);
-    }
-    const points = WaveformCurve.points(this.displayedValues, width, height, this.lastScrollPhase,
+    const points = WaveformCurve.points(this.scroll.values, width, height, this.scroll.scrollPhase,
       this.dbFloor, this.dbCeiling);
     const segments = WaveformCurve.segments(points);
     if (segments.length === 0) {
@@ -221,7 +224,7 @@ export struct LiveWaveform {
   }
 
   private drawLiveHead(segment: WaveSegment): void {
-    const head = WaveformCurve.at(segment, this.lastScrollPhase);
+    const head = WaveformCurve.at(segment, this.scroll.scrollPhase);
     this.context.fillStyle = this.waveColor(1);
     this.context.shadowColor = this.waveColor(0.72);
     this.context.shadowBlur = 12;

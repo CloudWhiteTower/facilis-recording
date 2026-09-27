@@ -2,6 +2,8 @@ import { RecordingState } from '../models/RecordingTypes';
 import { NavigationStore } from '../utils/NavigationStore';
 import { WaveformMotion } from '../utils/WaveformMotion';
 import { ThemeMode } from '../utils/HarmonyTheme';
+import { CanvasFrameDriver } from '../utils/CanvasFrameDriver';
+import { MotionTheme } from '../utils/MotionTheme';
 
 // One edge stroke, no blur or shadow. Never runs outside foreground recording.
 @Component
@@ -11,15 +13,17 @@ export struct StageEdgeLight {
   @Prop @Watch('syncMotion') accentColor: string = '#C85A10';
   @Prop @Watch('syncMotion') themeMode: number = ThemeMode.LIGHT;
   @StorageLink(NavigationStore.FOREGROUND_KEY) @Watch('syncMotion') private foreground: boolean = true;
+  @StorageLink(MotionTheme.REDUCE_KEY) @Watch('syncMotion') private reduceMotion: boolean = false;
   private context: CanvasRenderingContext2D = new CanvasRenderingContext2D(new RenderingContextSettings(true));
-  private frameTimer: number = -1;
+  private readonly frames: CanvasFrameDriver = new CanvasFrameDriver();
   private widthVp: number = 0;
   private heightVp: number = 0;
   private ready: boolean = false;
-  private startedAt: number = 0;
+  private areaVisible: boolean = true;
+  private elapsedMs: number = 0;
 
   aboutToDisappear(): void {
-    this.stopMotion();
+    this.frames.release();
     this.ready = false;
   }
 
@@ -38,28 +42,35 @@ export struct StageEdgeLight {
         this.heightVp = Number(area.height);
         this.syncMotion();
       })
-  }
-
-  private stopMotion(): void {
-    if (this.frameTimer >= 0) {
-      clearInterval(this.frameTimer);
-      this.frameTimer = -1;
-    }
+      .onVisibleAreaChange([0, 1], (visible: boolean, ratio: number): void => {
+        this.areaVisible = visible && ratio > 0;
+        this.syncMotion();
+      })
   }
 
   private syncMotion(): void {
-    this.stopMotion();
     if (!this.ready) {
+      this.frames.stop();
       return;
     }
-    this.context.clearRect(0, 0, this.widthVp, this.heightVp);
-    if (!this.isVisible || !this.foreground) {
+    if (!this.isVisible || !this.foreground || !this.areaVisible) {
+      this.frames.stop();
       return;
+    }
+    if (!WaveformMotion.showsHistory(this.recordingState)) {
+      this.elapsedMs = 0;
     }
     this.draw();
-    if (WaveformMotion.shouldAnimate(this.recordingState, this.isVisible, this.foreground)) {
-      this.startedAt = Date.now();
-      this.frameTimer = setInterval((): void => { this.draw(); }, 34);
+    if (WaveformMotion.shouldAnimate(this.recordingState, this.isVisible && this.areaVisible,
+      this.foreground, this.reduceMotion)) {
+      this.frames.start(this.getUIContext(), (deltaMs: number): void => {
+        if (deltaMs > 0) {
+          this.elapsedMs = (this.elapsedMs + deltaMs) % 6000;
+          this.draw();
+        }
+      });
+    } else {
+      this.frames.stop();
     }
   }
 
@@ -71,7 +82,8 @@ export struct StageEdgeLight {
     }
     const ctx = this.context;
     const active = this.recordingState === RecordingState.RECORDING;
-    const angle = active ? (Date.now() - this.startedAt) / 6000 * Math.PI * 2 : -Math.PI * 0.65;
+    const angle = WaveformMotion.showsHistory(this.recordingState) ?
+      this.elapsedMs / 6000 * Math.PI * 2 - Math.PI * 0.65 : -Math.PI * 0.65;
     const dx = Math.cos(angle) * w / 2;
     const dy = Math.sin(angle) * h / 2;
     const gradient = ctx.createLinearGradient(w / 2 - dx, h / 2 - dy, w / 2 + dx, h / 2 + dy);

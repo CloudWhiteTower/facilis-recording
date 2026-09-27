@@ -1,0 +1,58 @@
+[
+  {
+    "name": "Recording_20260927_172545.wav",
+    "exitCode": 0,
+    "statistics": [
+      "[Parsed_astats_0 @ 00000241eb089840] DC offset: 0.000015\r",
+      "[Parsed_astats_0 @ 00000241eb089840] Min level: -32767.000000\r",
+      "[Parsed_astats_0 @ 00000241eb089840] Max level: 32767.000000\r",
+      "[Parsed_astats_0 @ 00000241eb089840] Peak level dB: 0.000000\r",
+      "[Parsed_astats_0 @ 00000241eb089840] RMS level dB: -35.065758\r",
+      "[Parsed_astats_0 @ 00000241eb089840] Overall\r",
+      "[Parsed_astats_0 @ 00000241eb089840] DC offset: 0.000015\r",
+      "[Parsed_astats_0 @ 00000241eb089840] Min level: -32767.000000\r",
+      "[Parsed_astats_0 @ 00000241eb089840] Max level: 32767.000000\r",
+      "[Parsed_astats_0 @ 00000241eb089840] Peak level dB: 0.000000\r",
+      "[Parsed_astats_0 @ 00000241eb089840] RMS level dB: -35.065758\r",
+      "[Parsed_astats_0 @ 00000241eb089840] Number of samples: 89165760\r"
+    ]
+  },
+  {
+    "name": "Recording_20260927_175806.flac",
+    "exitCode": 0,
+    "statistics": [
+      "[Parsed_astats_0 @ 000001a3821c4fc0] DC offset: -0.000005\r",
+      "[Parsed_astats_0 @ 000001a3821c4fc0] Min level: -23151.000000\r",
+      "[Parsed_astats_0 @ 000001a3821c4fc0] Max level: 24531.000000\r",
+      "[Parsed_astats_0 @ 000001a3821c4fc0] Peak level dB: -2.514429\r",
+      "[Parsed_astats_0 @ 000001a3821c4fc0] RMS level dB: -37.232764\r",
+      "[Parsed_astats_0 @ 000001a3821c4fc0] Overall\r",
+      "[Parsed_astats_0 @ 000001a3821c4fc0] DC offset: -0.000005\r",
+      "[Parsed_astats_0 @ 000001a3821c4fc0] Min level: -23151.000000\r",
+      "[Parsed_astats_0 @ 000001a3821c4fc0] Max level: 24531.000000\r",
+      "[Parsed_astats_0 @ 000001a3821c4fc0] Peak level dB: -2.514429\r",
+      "[Parsed_astats_0 @ 000001a3821c4fc0] RMS level dB: -37.232764\r",
+      "[Parsed_astats_0 @ 000001a3821c4fc0] Number of samples: 1911360\r"
+    ]
+  },
+  {
+    "name": "Recording_20260927_180429.m4a",
+    "exitCode": 0,
+    "statistics": [
+      "[Parsed_astats_0 @ 00000161d6f19840] DC offset: 0.000019\r",
+      "[Parsed_astats_0 @ 00000161d6f19840] Min level: -0.090268\r",
+      "[Parsed_astats_0 @ 00000161d6f19840] Max level: 0.108307\r",
+      "[Parsed_astats_0 @ 00000161d6f19840] Peak level dB: -19.306898\r",
+      "[Parsed_astats_0 @ 00000161d6f19840] RMS level dB: -40.701277\r",
+      "[Parsed_astats_0 @ 00000161d6f19840] Number of NaNs: 0\r",
+      "[Parsed_astats_0 @ 00000161d6f19840] Overall\r",
+      "[Parsed_astats_0 @ 00000161d6f19840] DC offset: 0.000019\r",
+      "[Parsed_astats_0 @ 00000161d6f19840] Min level: -0.090268\r",
+      "[Parsed_astats_0 @ 00000161d6f19840] Max level: 0.108307\r",
+      "[Parsed_astats_0 @ 00000161d6f19840] Peak level dB: -19.306898\r",
+      "[Parsed_astats_0 @ 00000161d6f19840] RMS level dB: -40.701277\r",
+      "[Parsed_astats_0 @ 00000161d6f19840] Number of samples: 693248\r",
+      "[Parsed_astats_0 @ 00000161d6f19840] Number of NaNs: 0.000000\r"
+    ]
+  }
+]

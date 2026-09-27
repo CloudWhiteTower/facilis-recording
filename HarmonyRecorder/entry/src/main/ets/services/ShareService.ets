@@ -3,10 +3,12 @@ import { fileUri } from '@kit.CoreFileKit';
 import { uniformTypeDescriptor as utd } from '@kit.ArkData';
 import { systemShare } from '@kit.ShareKit';
 import { RecordingInfo } from '../models/RecordingTypes';
+import { RecordingRepository } from '../repository/RecordingRepository';
 
 export class ShareService {
   static async shareRecording(context: common.UIAbilityContext, recording: RecordingInfo, anchorId: string): Promise<void> {
-    await ShareService.shareAudioFile(context, recording.filePath, recording.fileName, anchorId);
+    const path = RecordingRepository.validateRecordingPath(context, recording);
+    await ShareService.shareAudioFile(context, path, recording.fileName, anchorId);
   }
 
   static async shareAudioFile(context: common.UIAbilityContext, filePath: string, fileName: string,

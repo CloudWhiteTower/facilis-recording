@@ -22,11 +22,15 @@ export class NavigationStore {
   }
 
   static open(page: AppPage): void {
-    AppStorage.setOrCreate(NavigationStore.PAGE_KEY, page);
+    if (AppStorage.get<AppPage>(NavigationStore.PAGE_KEY) !== page) {
+      AppStorage.setOrCreate(NavigationStore.PAGE_KEY, page);
+    }
   }
 
   static setRecordingActive(active: boolean): void {
-    AppStorage.setOrCreate(NavigationStore.ACTIVE_RECORDING_KEY, active);
+    if (AppStorage.get<boolean>(NavigationStore.ACTIVE_RECORDING_KEY) !== active) {
+      AppStorage.setOrCreate(NavigationStore.ACTIVE_RECORDING_KEY, active);
+    }
   }
 }
 

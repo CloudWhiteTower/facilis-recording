@@ -1,0 +1,23 @@
+{
+  "activeAudioCount": 14,
+  "trashAudioCount": 0,
+  "activeIndexRows": 14,
+  "trashIndexRows": 0,
+  "transactionPresent": false,
+  "targets": [
+    {
+      "file": "Recording_20260927_174110.wav",
+      "activeFileExists": false,
+      "trashFileExists": false,
+      "activeIndexContains": false,
+      "trashIndexContains": false
+    },
+    {
+      "file": "Recording_20260927_174137.wav",
+      "activeFileExists": false,
+      "trashFileExists": false,
+      "activeIndexContains": false,
+      "trashIndexContains": false
+    }
+  ]
+}

@@ -1,7 +1,10 @@
 import { common } from '@kit.AbilityKit';
+import { accessibility } from '@kit.AccessibilityKit';
 import { DividerMode, HdsNavigation, HdsTabs, HdsTabsController } from '@kit.UIDesignKit';
 import { HarmonyPalette, HarmonyTheme, HarmonyTokens, ThemeMode, ThemeStore } from '../utils/HarmonyTheme';
 import { MaterialRole, MaterialTheme } from '../utils/MaterialTheme';
+import { MotionTheme } from '../utils/MotionTheme';
+import { PressFeedback } from '../utils/PressFeedback';
 import { AppPage, NavigationStore } from '../utils/NavigationStore';
 import { PlayerPage } from './PlayerPage';
 import { RecorderPage } from './RecorderPage';
@@ -14,13 +17,42 @@ struct Index {
   @StorageLink(NavigationStore.PAGE_KEY) @Watch('onPageChanged') private currentPage: number = AppPage.RECORDER;
   @StorageLink(NavigationStore.ACTIVE_RECORDING_KEY) private isRecordingActive: boolean = false;
   @StorageLink(ThemeStore.MODE_KEY) @Watch('onThemeModeChange') private themeMode: number = ThemeMode.LIGHT;
+  @StorageLink(MotionTheme.REDUCE_KEY) private reduceMotion: boolean = false;
+  @State private highlightedTab: number = 0;
+  @State private availableWidth: number = 360;
   private readonly tabsController: HdsTabsController = new HdsTabsController();
   private readonly pageStack: NavPathStack = new NavPathStack();
+  private motionObserverRegistered: boolean = false;
+  private readonly onReduceMotionChanged = (reduced: boolean): void => {
+    this.getUIContext().runScopedTask((): void => {
+      this.reduceMotion = reduced;
+    });
+  };
 
   aboutToAppear(): void {
     ThemeStore.initialize();
     NavigationStore.initialize();
+    this.highlightedTab = this.selectedTabIndex();
+    try {
+      this.reduceMotion = accessibility.isAnimationReduceEnabledSync();
+      accessibility.onAnimationReduceStateChange(this.onReduceMotionChanged);
+      this.motionObserverRegistered = true;
+    } catch (error) {
+      console.warn(`Read reduced motion preference failed: ${String(error)}`);
+    }
     this.applyThemeMode();
+  }
+
+  aboutToDisappear(): void {
+    if (this.motionObserverRegistered) {
+      try {
+        accessibility.offAnimationReduceStateChange(this.onReduceMotionChanged);
+      } catch (error) {
+        console.warn(`Remove reduced motion observer failed: ${String(error)}`);
+      } finally {
+        this.motionObserverRegistered = false;
+      }
+    }
   }
 
   build() {
@@ -52,17 +84,17 @@ struct Index {
         .scrollable(false)
         .barOverlap(true)
         .barHeight(64)
-        .animationDuration(280)
+        .animationDuration(this.reduceMotion ? 0 : MotionTheme.TAB_DURATION_MS)
         .divider({ mode: DividerMode.NONE })
         .barFloatingStyle({
           barWidth: {
-            smallWidth: 248,
-            mediumWidth: 300,
-            largeWidth: 360
+            smallWidth: Math.min(248, Math.max(180, this.availableWidth - 32)),
+            mediumWidth: Math.min(300, Math.max(180, this.availableWidth - 48)),
+            largeWidth: Math.min(360, Math.max(180, this.availableWidth - 64))
           },
           barBottomMargin: 16,
           gradientMask: {
-            maskColor: HarmonyTokens.pageBackground(),
+            maskColor: this.palette().pageBackground,
             maskHeight: 108
           },
           lightColor: HarmonyTokens.primaryGlow(),
@@ -73,7 +105,13 @@ struct Index {
         .onContentWillChange((currentIndex: number, comingIndex: number): boolean => {
           return !this.isRecordingActive || comingIndex === 0;
         })
+        .onAnimationStart((index: number, targetIndex: number, event: TabsAnimationEvent): void => {
+          // A separate visual index responds immediately without interrupting
+          // the system's content transition by changing its bound index.
+          this.highlightedTab = targetIndex;
+        })
         .onChange((index: number): void => {
+          this.highlightedTab = index;
           if (this.currentPage !== AppPage.PLAYER) {
             NavigationStore.open(this.pageForTab(index));
           }
@@ -85,6 +123,12 @@ struct Index {
     .width('100%')
     .height('100%')
     .backgroundColor(HarmonyTokens.pageBackground())
+    .onAreaChange((oldArea: Area, area: Area): void => {
+      const width = Number(area.width);
+      if (Number.isFinite(width) && width > 0 && Math.abs(width - this.availableWidth) >= 1) {
+        this.availableWidth = width;
+      }
+    })
   }
 
   @Builder
@@ -95,40 +139,62 @@ struct Index {
   }
 
   private onPageChanged(): void {
+    this.highlightedTab = this.selectedTabIndex();
     if (this.currentPage === AppPage.PLAYER) {
       if (this.pageStack.size() === 0) {
-        this.pageStack.pushPathByName('player', undefined);
+        this.pageStack.pushPathByName('player', undefined, !this.reduceMotion);
       }
     } else if (this.pageStack.size() > 0) {
-      this.pageStack.pop();
+      this.pageStack.pop(!this.reduceMotion);
     }
   }
 
   @Builder
   private tabBarItem(symbol: Resource, title: string, page: AppPage) {
-    Column() {
+    Button({ type: ButtonType.Normal, stateEffect: false }) {
       Stack() {
-        if (this.currentPage === page) {
-          Column()
-            .width(52)
-            .height(44)
-            .borderRadius(19)
-            .backgroundColor(HarmonyTokens.primarySubtle())
-        }
+        Column()
+          .width(52)
+          .height(44)
+          .borderRadius(19)
+          .backgroundColor(HarmonyTokens.primarySubtle())
+          .animation(undefined)
+          .opacity(this.isTabHighlighted(page) ? 1 : 0)
+          .scale({ x: this.isTabHighlighted(page) ? 1 : 0.82, y: this.isTabHighlighted(page) ? 1 : 0.82 })
+          .animation(MotionTheme.state(this.reduceMotion))
+          .hitTestBehavior(HitTestMode.None)
         SymbolGlyph(symbol)
           .fontSize(24)
-          .fontColor([this.currentPage === page ? HarmonyTokens.primary() : HarmonyTokens.textSecondary()])
+          .fontColor([this.isTabHighlighted(page) ? HarmonyTokens.primary() : HarmonyTokens.textSecondary()])
+          .animation(MotionTheme.content(this.reduceMotion))
       }
       .width(64)
       .height(44)
       .alignContent(Alignment.Center)
     }
-    .width(76)
+    .width(Math.min(76, Math.max(48, (this.availableWidth - 48) / 3)))
     .height(56)
-    .justifyContent(FlexAlign.Center)
-    .alignItems(HorizontalAlign.Center)
+    .padding(0)
+    .borderRadius(24)
+    .backgroundColor(Color.Transparent)
+    .enabled(this.canOpen(page))
+    .animation(undefined)
     .opacity(this.canOpen(page) ? 1 : 0.36)
+    .animation(MotionTheme.content(this.reduceMotion))
+    .animation(undefined)
+    .attributeModifier(PressFeedback.button(this.themeMode, this.reduceMotion))
+    .animation(MotionTheme.press(this.reduceMotion))
     .accessibilityText(title)
+    .id(`tab-${page}`)
+    .onClick((): void => {
+      if (this.canOpen(page)) {
+        this.tabsController.changeIndex(page === AppPage.SETTINGS ? 2 : page === AppPage.RECORDINGS ? 1 : 0);
+      }
+    })
+  }
+
+  private isTabHighlighted(page: AppPage): boolean {
+    return this.pageForTab(this.highlightedTab) === page;
   }
 
   private selectedTabIndex(): number {

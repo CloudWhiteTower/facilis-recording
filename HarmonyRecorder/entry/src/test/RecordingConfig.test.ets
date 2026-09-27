@@ -25,5 +25,15 @@ export default function recordingConfigTest() {
       expect(RecordingConfig.aac(256000, 44100).qualityLabel).assertEqual('High · 256 kbps · 44.1 kHz · Mono');
       expect(RecordingConfig.aac(256000).compactLabel).assertEqual('M4A · 256 kbps');
     });
+
+    it('selects FLAC as a separate lossless 16-bit format', 0, () => {
+      const config = RecordingConfig.flac(44100);
+      expect(config.extension).assertEqual('flac');
+      expect(config.formatLabel).assertEqual('FLAC');
+      expect(config.bitDepth).assertEqual(16);
+      expect(config.bitrate).assertEqual(0);
+      expect(config.qualityLabel).assertEqual('44.1 kHz / 16 bit / Mono');
+      expect(config.compactLabel).assertEqual('FLAC · 16 bit');
+    });
   });
 }

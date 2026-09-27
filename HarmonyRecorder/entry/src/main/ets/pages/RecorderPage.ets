@@ -1,5 +1,4 @@
 import { common } from '@kit.AbilityKit';
-import { curves } from '@kit.ArkUI';
 import { HdsNavigation, HdsNavigationTitleMode } from '@kit.UIDesignKit';
 import { LiveWaveform } from '../components/LiveWaveform';
 import { StageEdgeLight } from '../components/StageEdgeLight';
@@ -9,7 +8,9 @@ import { RecordingService } from '../services/RecordingService';
 import { FileSizeUtils } from '../utils/FileSizeUtils';
 import { HarmonyPalette, HarmonyTheme, HarmonyTokens, ThemeMode, ThemeStore } from '../utils/HarmonyTheme';
 import { MaterialRole, MaterialTheme } from '../utils/MaterialTheme';
+import { MotionTheme } from '../utils/MotionTheme';
 import { NavigationStore } from '../utils/NavigationStore';
+import { PressFeedback } from '../utils/PressFeedback';
 import { ResponsiveLayout } from '../utils/ResponsiveLayout';
 import { TimeUtils } from '../utils/TimeUtils';
 
@@ -22,22 +23,27 @@ struct RecordingQualitySheet {
   @Prop themeMode: number = ThemeMode.LIGHT;
 
   build() {
-    Column({ space: 0 }) {
-      Text('录音质量')
-        .width('100%')
-        .fontSize(20)
-        .fontWeight(FontWeight.Bold)
-        .fontColor(HarmonyTokens.textPrimary())
-        .padding({ left: 8, bottom: 14 })
-      this.formatSetting()
-      Divider().color(HarmonyTokens.divider()).margin({ left: 8, right: 8 })
-      this.sampleRateSetting()
-      Divider().color(HarmonyTokens.divider()).margin({ left: 8, right: 8 })
-      this.encodingSetting()
+    Scroll() {
+      Column({ space: 0 }) {
+        Text('录音质量')
+          .width('100%')
+          .fontSize(20)
+          .fontWeight(FontWeight.Bold)
+          .fontColor(HarmonyTokens.textPrimary())
+          .padding({ left: 8, bottom: 14 })
+        this.formatSetting()
+        Divider().color(HarmonyTokens.divider()).margin({ left: 8, right: 8 })
+        this.sampleRateSetting()
+        Divider().color(HarmonyTokens.divider()).margin({ left: 8, right: 8 })
+        this.encodingSetting()
+      }
+      .width('100%')
+      .padding({ left: 20, right: 20, top: 10, bottom: 30 })
+      .backgroundColor(Color.Transparent)
     }
     .width('100%')
-    .padding({ left: 20, right: 20, top: 10, bottom: 30 })
-    .backgroundColor(Color.Transparent)
+    .height('100%')
+    .scrollBar(BarState.Auto)
   }
 
   @Builder
@@ -48,9 +54,10 @@ struct RecordingQualitySheet {
         .fontSize(12)
         .fontColor(HarmonyTokens.textSecondary())
         .padding({ left: 10 })
-      Select([{ value: 'WAV' }, { value: 'M4A' }])
-        .selected(this.selectedFormat === RecordingFormat.WAV ? 0 : 1)
-        .value(this.selectedFormat === RecordingFormat.WAV ? 'WAV' : 'M4A')
+      Select([{ value: 'WAV' }, { value: 'M4A' }, { value: 'FLAC' }])
+        .selected(this.selectedFormat === RecordingFormat.WAV ? 0 :
+          this.selectedFormat === RecordingFormat.M4A ? 1 : 2)
+        .value(this.selectedFormat.toUpperCase())
         .width('100%')
         .height(44)
         .font({ size: 17, weight: FontWeight.Medium })
@@ -64,7 +71,8 @@ struct RecordingQualitySheet {
         .menuBackgroundBlurStyle(BlurStyle.COMPONENT_THICK)
         .showDefaultSelectedIcon(true)
         .onSelect((index: number): void => {
-          this.selectedFormat = index === 0 ? RecordingFormat.WAV : RecordingFormat.M4A;
+          this.selectedFormat = index === 0 ? RecordingFormat.WAV :
+            index === 1 ? RecordingFormat.M4A : RecordingFormat.FLAC;
         })
     }
     .width('100%')
@@ -109,7 +117,7 @@ struct RecordingQualitySheet {
   @Builder
   private encodingSetting() {
     Column({ space: 3 }) {
-      Text(this.selectedFormat === RecordingFormat.WAV ? '位深' : '码率')
+      Text(this.selectedFormat === RecordingFormat.M4A ? '码率' : '位深')
         .width('100%')
         .fontSize(12)
         .fontColor(HarmonyTokens.textSecondary())
@@ -133,6 +141,13 @@ struct RecordingQualitySheet {
           .onSelect((index: number): void => {
             this.selectedWavBitDepth = index === 0 ? 16 : 24;
           })
+      } else if (this.selectedFormat === RecordingFormat.FLAC) {
+        Text('16 bit · 无损压缩')
+          .fontSize(17)
+          .fontWeight(FontWeight.Medium)
+          .fontColor(HarmonyTokens.textPrimary())
+          .height(44)
+          .padding({ left: 10 })
       } else {
         Select([{ value: '128 kbps' }, { value: '256 kbps' }])
           .selected(this.selectedAacBitrate === 128000 ? 0 : 1)
@@ -175,23 +190,40 @@ export struct RecorderPage {
   @State private notice: string = '';
   @State private isWorking: boolean = false;
   @State private isWide: boolean = false;
+  @State private contentHeight: number = 640;
   @State private stageHeight: number = 0;
   @State private showFormatSheet: boolean = false;
-  @State private recordPressed: boolean = false;
+  private discardDialogOpen: boolean = false;
   @StorageLink(ThemeStore.MODE_KEY) private themeMode: number = ThemeMode.LIGHT;
+  @StorageLink(MotionTheme.REDUCE_KEY) private reduceMotion: boolean = false;
   private readonly recordingService: RecordingService = RecordingService.getInstance();
 
   aboutToAppear(): void {
     this.syncNavigationRecordingState(this.recordingService.getState());
     this.recordingService.setObserver((snapshot: RecordingSnapshot): void => {
-      this.recordingState = snapshot.state;
-      this.durationMs = snapshot.durationMs;
-      this.fileSizeBytes = snapshot.sizeBytes;
-      this.waveform = snapshot.waveform;
-      this.syncNavigationRecordingState(snapshot.state);
-      if (snapshot.message.length > 0) {
-        this.notice = snapshot.message;
-      }
+      this.getUIContext().runScopedTask((): void => {
+        // Animate the control-state boundary once, never every audio update.
+        if (this.recordingState !== snapshot.state) {
+          this.getUIContext().animateTo(MotionTheme.state(), (): void => {
+            this.recordingState = snapshot.state;
+          });
+          this.syncNavigationRecordingState(snapshot.state);
+        }
+        const displayDuration = Math.floor(snapshot.durationMs / 1000) * 1000;
+        if (this.durationMs !== displayDuration) {
+          this.durationMs = displayDuration;
+        }
+        if (FileSizeUtils.format(this.fileSizeBytes) !== FileSizeUtils.format(snapshot.sizeBytes)) {
+          this.fileSizeBytes = snapshot.sizeBytes;
+        }
+        if (snapshot.waveform.length !== this.waveform.length ||
+          snapshot.waveform.some((value: number, index: number): boolean => value !== this.waveform[index])) {
+          this.waveform = snapshot.waveform;
+        }
+        if (snapshot.message.length > 0) {
+          this.notice = snapshot.message;
+        }
+      });
     });
   }
 
@@ -201,45 +233,59 @@ export struct RecorderPage {
 
   build() {
     HdsNavigation() {
-      if (this.isWide) {
-        Row({ space: 24 }) {
-          Column() {
-            this.recordingStage()
-          }
-          .layoutWeight(1)
-          Column() {
-            Blank().layoutWeight(1)
-            this.recordingFooter()
-            if (this.notice.length > 0) {
-              this.noticeText()
+      Scroll() {
+        Column() {
+          if (this.isWide) {
+            Row({ space: 24 }) {
+              Column() {
+                this.recordingStage()
+              }
+              .layoutWeight(1)
+              Column() {
+                Blank().layoutWeight(1)
+                this.recordingFooter()
+                if (this.notice.length > 0) {
+                  this.noticeText()
+                }
+                Blank().layoutWeight(1)
+              }
+              .width(224)
+              .height('100%')
+              .justifyContent(FlexAlign.Center)
             }
-            Blank().layoutWeight(1)
+            .width(ResponsiveLayout.contentWidth(true))
+            .constraintSize({ maxWidth: 1100 })
+            .height(Math.max(this.contentHeight, 520))
+            .padding({ left: 24, right: 24, top: 16, bottom: 104 })
+            .alignItems(VerticalAlign.Center)
+          } else {
+            Column({ space: 16 }) {
+              Blank().layoutWeight(1)
+              this.recordingStage()
+              this.recordingFooter()
+              if (this.notice.length > 0) {
+                this.noticeText()
+              }
+              Blank().layoutWeight(1)
+            }
+            .width('100%')
+            .height(Math.max(this.contentHeight, this.notice.length > 0 ? 620 : 560))
+            .padding({ left: 16, right: 16, top: 8, bottom: 104 })
+            .justifyContent(FlexAlign.Center)
+            .alignItems(HorizontalAlign.Center)
           }
-          .width(224)
-          .height('100%')
-          .justifyContent(FlexAlign.Center)
-        }
-        .width(ResponsiveLayout.contentWidth(true))
-        .constraintSize({ maxWidth: 1100 })
-        .height('100%')
-        .padding({ left: 24, right: 24, top: 16, bottom: 104 })
-        .alignItems(VerticalAlign.Center)
-      } else {
-        Column({ space: 16 }) {
-          Blank().layoutWeight(1)
-          this.recordingStage()
-          this.recordingFooter()
-          if (this.notice.length > 0) {
-            this.noticeText()
-          }
-          Blank().layoutWeight(1)
         }
         .width('100%')
-        .height('100%')
-        .padding({ left: 16, right: 16, top: 8, bottom: 104 })
-        .justifyContent(FlexAlign.Center)
-        .alignItems(HorizontalAlign.Center)
       }
+      .width('100%')
+      .height('100%')
+      .scrollBar(BarState.Auto)
+      .onAreaChange((oldArea: Area, area: Area): void => {
+        const height = Number(area.height);
+        if (Number.isFinite(height) && Math.abs(height - this.contentHeight) >= 1) {
+          this.contentHeight = height;
+        }
+      })
     }
     .width('100%')
     .height('100%')
@@ -253,6 +299,7 @@ export struct RecorderPage {
       },
       enableComponentSafeArea: true
     })
+    .mode(NavigationMode.Stack)
     .titleMode(HdsNavigationTitleMode.MINI)
     .hideBackButton(true)
     .backgroundColor(HarmonyTokens.pageBackground())
@@ -268,7 +315,8 @@ export struct RecorderPage {
       .fontColor(HarmonyTokens.danger())
       .textAlign(TextAlign.Center)
       .width('100%')
-      .maxLines(2)
+      .maxLines(4)
+      .transition(MotionTheme.appear(this.reduceMotion))
   }
 
   @Builder
@@ -276,13 +324,19 @@ export struct RecorderPage {
     Stack({ alignContent: Alignment.Center }) {
       Column({ space: this.isWide ? 20 : 14 }) {
         Row({ space: 8 }) {
-          if (this.recordingState === RecordingState.RECORDING) {
-            Circle().width(7).height(7).fill(HarmonyTokens.primary())
-          } else if (this.recordingState === RecordingState.PAUSED) {
-            SymbolGlyph($r('sys.symbol.pause_fill'))
-              .fontSize(12)
-              .fontColor([HarmonyTokens.waveformIdle()])
+          Stack({ alignContent: Alignment.Center }) {
+            if (this.recordingState === RecordingState.RECORDING) {
+              Circle().width(7).height(7).fill(HarmonyTokens.primary())
+                .transition(MotionTheme.appear(this.reduceMotion))
+            } else if (this.recordingState === RecordingState.PAUSED) {
+              SymbolGlyph($r('sys.symbol.pause_fill'))
+                .fontSize(12)
+                .fontColor([HarmonyTokens.waveformIdle()])
+                .transition(MotionTheme.appear(this.reduceMotion))
+            }
           }
+          .width(12)
+          .height(16)
           Text(TimeUtils.formatDuration(this.durationMs))
             .fontSize(18)
             .fontWeight(FontWeight.Medium)
@@ -297,6 +351,7 @@ export struct RecorderPage {
           themeMode: this.themeMode,
           accentColor: this.palette().primary,
           isVisible: this.isVisible,
+          sampleIntervalMs: this.selectedFormat === RecordingFormat.M4A ? 120 : 90,
           renderHeight: this.isWide ? 220 : 170
         })
 
@@ -321,7 +376,10 @@ export struct RecorderPage {
       .attributeModifier(MaterialTheme.surface(MaterialRole.STAGE, this.themeMode))
       .borderRadius(28)
       .onAreaChange((oldArea: Area, area: Area): void => {
-        this.stageHeight = Number(area.height);
+        const height = Number(area.height);
+        if (Number.isFinite(height) && Math.abs(height - this.stageHeight) >= 1) {
+          this.stageHeight = height;
+        }
       })
 
       StageEdgeLight({
@@ -357,6 +415,9 @@ export struct RecorderPage {
           SymbolGlyph($r('sys.symbol.chevron_down'))
             .fontSize(12)
             .fontColor([HarmonyTokens.primary()])
+            .animation(undefined)
+            .rotate({ angle: this.showFormatSheet && !this.reduceMotion ? 180 : 0 })
+            .animation(MotionTheme.state(this.reduceMotion))
       }
     }
     .layoutWeight(1)
@@ -364,13 +425,17 @@ export struct RecorderPage {
     .backgroundColor(Color.Transparent)
     .borderRadius(18)
     .enabled(!this.hasActiveRecording())
+    .animation(undefined)
+    .attributeModifier(PressFeedback.button(this.themeMode, this.reduceMotion))
+    .animation(MotionTheme.press(this.reduceMotion))
     .accessibilityText(`调整录音质量，当前${this.accessibleQualityLabel()}`)
+    .id('record-quality')
     .onClick((): void => {
       this.showFormatSheet = true;
     })
     .bindSheet($$this.showFormatSheet, this.recordingSettingsSheet(), {
       height: SheetSize.MEDIUM,
-      preferType: SheetType.BOTTOM,
+      preferType: this.isWide ? SheetType.CENTER : SheetType.BOTTOM,
       dragBar: true,
       showClose: false,
       backgroundColor: HarmonyTokens.glassSurface(),
@@ -403,111 +468,135 @@ export struct RecorderPage {
 
   @Builder
   private recordingFooter() {
-    if (this.hasActiveRecording()) {
-      Row({ space: 8 }) {
-        Button() {
-          SymbolGlyph($r('sys.symbol.trash'))
-            .fontSize(22)
-            .fontColor([HarmonyTokens.danger()])
-        }
-        .width(56)
-        .height(56)
-        .backgroundColor(HarmonyTokens.dangerSubtle())
-        .borderRadius(28)
-        .enabled(!this.isWorking)
-        .accessibilityText('删除本次录音')
-        .onClick((): void => {
-          this.confirmDiscardRecording();
-        })
+    // Stable layout slot: start/stop no longer shifts the stage and its Canvas.
+    Stack({ alignContent: Alignment.Center }) {
+      if (this.hasActiveRecording()) {
+        Row({ space: 8 }) {
+          Button() {
+            SymbolGlyph($r('sys.symbol.trash'))
+              .fontSize(22)
+              .fontColor([HarmonyTokens.danger()])
+          }
+          .width(56)
+          .height(56)
+          .backgroundColor(HarmonyTokens.dangerSubtle())
+          .borderRadius(28)
+          .enabled(!this.isWorking)
+          .animation(undefined)
+          .attributeModifier(PressFeedback.button(this.themeMode, this.reduceMotion))
+          .animation(MotionTheme.press(this.reduceMotion))
+          .accessibilityText('删除本次录音')
+          .id('record-discard')
+          .onClick((): void => {
+            this.confirmDiscardRecording();
+          })
 
-        Button({ type: ButtonType.Circle }) {
-          if (this.recordingState === RecordingState.RECORDING) {
-            SymbolGlyph($r('sys.symbol.pause_fill'))
-              .fontSize(27)
-              .fontColor([HarmonyTokens.onPrimary()])
-          } else {
-            SymbolGlyph($r('sys.symbol.play_fill'))
-              .fontSize(27)
+          Button({ type: ButtonType.Circle }) {
+            if (this.recordingState === RecordingState.RECORDING) {
+              SymbolGlyph($r('sys.symbol.pause_fill'))
+                .fontSize(27)
+                .fontColor([HarmonyTokens.onPrimary()])
+                .transition(MotionTheme.appear(this.reduceMotion))
+            } else {
+              SymbolGlyph($r('sys.symbol.play_fill'))
+                .fontSize(27)
+                .fontColor([HarmonyTokens.onPrimary()])
+                .transition(MotionTheme.appear(this.reduceMotion))
+            }
+          }
+          .width(68)
+          .height(68)
+          .backgroundColor(HarmonyTokens.primary())
+          .linearGradient({ angle: 155, colors: [[HarmonyTokens.controlLight(), 0],
+            [HarmonyTokens.primary(), 0.64]] })
+          .border({ width: 0.75, color: HarmonyTokens.glassHighlight() })
+          .borderRadius(34)
+          .clip(true)
+          .enabled(!this.isWorking)
+          .animation(undefined)
+          .attributeModifier(PressFeedback.button(this.themeMode, this.reduceMotion, true))
+          .animation(MotionTheme.press(this.reduceMotion))
+          .accessibilityText(this.recordingState === RecordingState.RECORDING ? '暂停录音' : '继续录音')
+          .id('record-pause')
+          .onClick((): void => {
+            this.togglePause();
+          })
+
+          Button() {
+            SymbolGlyph($r('sys.symbol.checkmark'))
+              .fontSize(23)
+              .fontColor([HarmonyTokens.primary()])
+          }
+          .width(56)
+          .height(56)
+          .backgroundColor(HarmonyTokens.primarySubtle())
+          .borderRadius(28)
+          .enabled(!this.isWorking)
+          .animation(undefined)
+          .attributeModifier(PressFeedback.button(this.themeMode, this.reduceMotion))
+          .animation(MotionTheme.press(this.reduceMotion))
+          .accessibilityText('保存录音')
+          .id('record-save')
+          .onClick((): void => {
+            this.stopRecording();
+          })
+        }
+        .width(this.isWide ? 220 : 224)
+        .height(84)
+        .padding({ left: 10, right: 10 })
+        .justifyContent(FlexAlign.SpaceBetween)
+        .alignItems(VerticalAlign.Center)
+        .attributeModifier(MaterialTheme.surface(MaterialRole.CONTROL, this.themeMode))
+        .borderRadius(42)
+        .transition(MotionTheme.appear(this.reduceMotion))
+      } else {
+        Stack({ alignContent: Alignment.Center }) {
+          Column()
+            .width(this.isWide ? 110 : 104)
+            .height(this.isWide ? 110 : 104)
+            .attributeModifier(MaterialTheme.surface(MaterialRole.CONTROL, this.themeMode))
+            .borderRadius(55)
+            .hitTestBehavior(HitTestMode.None)
+          Button({ type: ButtonType.Circle }) {
+            SymbolGlyph($r('sys.symbol.mic_fill'))
+              .fontSize(30)
               .fontColor([HarmonyTokens.onPrimary()])
           }
+          .width(this.isWide ? 88 : 82)
+          .height(this.isWide ? 88 : 82)
+          .backgroundColor(HarmonyTokens.primary())
+          .radialGradient({
+            center: ['30%', '15%'],
+            radius: '110%',
+            colors: [[HarmonyTokens.controlLight(), 0], [HarmonyTokens.primary(), 0.70]]
+          })
+          .borderRadius(this.isWide ? 44 : 41)
+          .clip(true)
+          .border({ width: 1, color: HarmonyTokens.glassHighlight() })
+          .animation(undefined)
+          .attributeModifier(PressFeedback.button(this.themeMode, this.reduceMotion, true))
+          .animation(MotionTheme.press(this.reduceMotion))
+          .enabled(!this.isWorking)
+          .accessibilityText('开始录音')
+          .id('record-start')
+          .onClick((): void => {
+            this.startRecording();
+          })
         }
-        .width(68)
-        .height(68)
-        .backgroundColor(HarmonyTokens.primary())
-        .linearGradient({ angle: 155, colors: [[HarmonyTokens.controlLight(), 0],
-          [HarmonyTokens.primary(), 0.64]] })
-        .border({ width: 0.75, color: HarmonyTokens.glassHighlight() })
-        .borderRadius(34)
-        .clip(true)
-        .enabled(!this.isWorking)
-        .accessibilityText(this.recordingState === RecordingState.RECORDING ? '暂停录音' : '继续录音')
-        .onClick((): void => {
-          this.togglePause();
-        })
-
-        Button() {
-          SymbolGlyph($r('sys.symbol.checkmark'))
-            .fontSize(23)
-            .fontColor([HarmonyTokens.primary()])
-        }
-        .width(56)
-        .height(56)
-        .backgroundColor(HarmonyTokens.primarySubtle())
-        .borderRadius(28)
-        .enabled(!this.isWorking)
-        .accessibilityText('保存录音')
-        .onClick((): void => {
-          this.stopRecording();
-        })
+        .width(148)
+        .height(112)
+        .transition(MotionTheme.appear(this.reduceMotion))
       }
-      .width(this.isWide ? 220 : 224)
-      .height(84)
-      .padding({ left: 10, right: 10 })
-      .justifyContent(FlexAlign.SpaceBetween)
-      .alignItems(VerticalAlign.Center)
-      .attributeModifier(MaterialTheme.surface(MaterialRole.CONTROL, this.themeMode))
-      .borderRadius(42)
-    } else {
-      Stack({ alignContent: Alignment.Center }) {
-        Column()
-          .width(this.isWide ? 110 : 104)
-          .height(this.isWide ? 110 : 104)
-          .attributeModifier(MaterialTheme.surface(MaterialRole.CONTROL, this.themeMode))
-          .borderRadius(55)
-          .hitTestBehavior(HitTestMode.None)
-        Button({ type: ButtonType.Circle }) {
-          SymbolGlyph($r('sys.symbol.mic_fill'))
-            .fontSize(30)
-            .fontColor([HarmonyTokens.onPrimary()])
-        }
-        .width(this.isWide ? 88 : 82)
-        .height(this.isWide ? 88 : 82)
-        .backgroundColor(HarmonyTokens.primary())
-        .radialGradient({
-          center: this.recordPressed ? ['50%', '50%'] : ['30%', '15%'],
-          radius: '110%',
-          colors: [[HarmonyTokens.controlLight(), 0], [HarmonyTokens.primary(), 0.70]]
-        })
-        .borderRadius(this.isWide ? 44 : 41)
-        .clip(true)
-        .border({ width: 1, color: HarmonyTokens.glassHighlight() })
-        .scale({ x: this.recordPressed ? 0.92 : 1, y: this.recordPressed ? 0.92 : 1 })
-        .animation({ curve: curves.springMotion(0.32, 0.78, 0.18) })
-        .enabled(!this.isWorking)
-        .accessibilityText('开始录音')
-        .onTouch((event: TouchEvent): void => {
-          this.recordPressed = event.type === TouchType.Down;
-        })
-        .onClick((): void => {
-          this.startRecording();
-        })
-      }
-      .width(148)
-      .height(112)
     }
+    .width(224)
+    .height(112)
   }
 
   private confirmDiscardRecording(): void {
+    if (this.isWorking || this.discardDialogOpen) {
+      return;
+    }
+    this.discardDialogOpen = true;
     this.getUIContext().getPromptAction().showDialog({
       title: '删除本次录音？',
       message: '本次录音不会保存。',
@@ -520,23 +609,34 @@ export struct RecorderPage {
         this.discardRecording();
       }
     }).catch((error: Error): void => {
-      this.notice = '无法打开确认窗口';
+      if (error.message !== 'cancel') {
+        console.error(`Open discard confirmation failed: ${String(error)}`);
+        this.notice = '无法打开确认窗口';
+      }
+    }).finally((): void => {
+      this.discardDialogOpen = false;
     });
   }
 
   private async discardRecording(): Promise<void> {
+    if (this.isWorking) {
+      return;
+    }
     this.isWorking = true;
     try {
       await this.recordingService.discard();
       this.notice = '';
     } catch (error) {
-      this.notice = '删除录音失败';
+      this.notice = String(error);
     } finally {
       this.isWorking = false;
     }
   }
 
   private async startRecording(): Promise<void> {
+    if (this.isWorking) {
+      return;
+    }
     this.isWorking = true;
     this.notice = '';
     try {
@@ -548,15 +648,18 @@ export struct RecorderPage {
       }
       await this.recordingService.start(context, this.currentConfig());
     } catch (error) {
-      this.notice = '无法开始录音';
+      this.notice = `无法开始录音：${String(error)}`;
     } finally {
       this.isWorking = false;
-      this.recordPressed = false;
     }
   }
 
   private async togglePause(): Promise<void> {
+    if (this.isWorking) {
+      return;
+    }
     this.isWorking = true;
+    this.notice = '';
     try {
       if (this.recordingState === RecordingState.RECORDING) {
         await this.recordingService.pause();
@@ -564,21 +667,22 @@ export struct RecorderPage {
         await this.recordingService.resume();
       }
     } catch (error) {
-      this.notice = '无法切换录音状态';
+      this.notice = String(error);
     } finally {
       this.isWorking = false;
     }
   }
 
   private async stopRecording(): Promise<void> {
+    if (this.isWorking) {
+      return;
+    }
     this.isWorking = true;
+    this.notice = '';
     try {
-      const saved = await this.recordingService.stop();
-      if (saved !== undefined) {
-        this.notice = '';
-      }
+      await this.recordingService.stop();
     } catch (error) {
-      this.notice = '保存录音失败';
+      this.notice = String(error);
     } finally {
       this.isWorking = false;
     }
@@ -587,6 +691,9 @@ export struct RecorderPage {
   private currentConfig(): RecordingConfig {
     if (this.selectedFormat === RecordingFormat.WAV) {
       return RecordingConfig.wav(this.selectedSampleRate, this.selectedWavBitDepth);
+    }
+    if (this.selectedFormat === RecordingFormat.FLAC) {
+      return RecordingConfig.flac(this.selectedSampleRate);
     }
     return RecordingConfig.aac(this.selectedAacBitrate, this.selectedSampleRate);
   }
@@ -600,8 +707,7 @@ export struct RecorderPage {
   }
 
   private compactFormatLabel(): string {
-    return this.selectedFormat === RecordingFormat.WAV ? `WAV · ${this.selectedWavBitDepth} bit` :
-      `M4A · ${this.selectedAacBitrate / 1000} kbps`;
+    return this.currentConfig().compactLabel;
   }
 
   private sampleRateLabel(): string {

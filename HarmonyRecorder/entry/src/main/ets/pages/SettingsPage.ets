@@ -1,55 +1,60 @@
-import { common } from '@kit.AbilityKit';
-import { curves } from '@kit.ArkUI';
 import { HdsNavigation, HdsNavigationTitleMode } from '@kit.UIDesignKit';
 import { HarmonyPalette, HarmonyTheme, HarmonyTokens, ThemeMode, ThemeStore } from '../utils/HarmonyTheme';
 import { MaterialRole, MaterialTheme } from '../utils/MaterialTheme';
+import { MotionTheme } from '../utils/MotionTheme';
+import { PressFeedback } from '../utils/PressFeedback';
 import { ResponsiveLayout } from '../utils/ResponsiveLayout';
 
 @Component
 export struct SettingsPage {
   @State private isWide: boolean = false;
   @StorageLink(ThemeStore.MODE_KEY) private themeMode: number = ThemeMode.LIGHT;
+  @StorageLink(MotionTheme.REDUCE_KEY) private reduceMotion: boolean = false;
 
   build() {
     HdsNavigation() {
-      Column({ space: 12 }) {
-        Text('外观')
+      Scroll() {
+        Column({ space: 12 }) {
+          Text('外观')
+            .width('100%')
+            .fontSize(13)
+            .fontWeight(FontWeight.Medium)
+            .fontColor(HarmonyTokens.textTertiary())
+            .padding({ left: 4 })
+
+          Row({ space: 12 }) {
+            this.appearanceChoice(
+              $r('sys.symbol.sun_max'),
+              $r('sys.symbol.sun_max_fill'),
+              '浅色',
+              ThemeMode.LIGHT
+            )
+            this.appearanceChoice(
+              $r('sys.symbol.moon'),
+              $r('sys.symbol.moon_fill'),
+              '深色',
+              ThemeMode.DARK
+            )
+          }
           .width('100%')
-          .fontSize(13)
-          .fontWeight(FontWeight.Medium)
-          .fontColor(HarmonyTokens.textTertiary())
-          .padding({ left: 4 })
+          .padding(8)
+          .attributeModifier(MaterialTheme.surface(MaterialRole.CONTROL, this.themeMode))
+          .borderRadius(28)
 
-        Row({ space: 12 }) {
-          this.appearanceChoice(
-            $r('sys.symbol.sun_max'),
-            $r('sys.symbol.sun_max_fill'),
-            '浅色',
-            ThemeMode.LIGHT
-          )
-          this.appearanceChoice(
-            $r('sys.symbol.moon'),
-            $r('sys.symbol.moon_fill'),
-            '深色',
-            ThemeMode.DARK
-          )
         }
-        .width('100%')
-        .padding(8)
-        .attributeModifier(MaterialTheme.surface(MaterialRole.CONTROL, this.themeMode))
-        .borderRadius(28)
-
-        Blank().layoutWeight(1)
-        Blank().height(104)
+        .width(ResponsiveLayout.contentWidth(this.isWide))
+        .constraintSize({ maxWidth: 720 })
+        .padding({
+          left: ResponsiveLayout.horizontalPadding(this.isWide),
+          right: ResponsiveLayout.horizontalPadding(this.isWide),
+          top: 16,
+          bottom: 120
+        })
       }
-      .width(ResponsiveLayout.contentWidth(this.isWide))
-      .constraintSize({ maxWidth: 920 })
+      .width('100%')
       .height('100%')
-      .padding({
-        left: ResponsiveLayout.horizontalPadding(this.isWide),
-        right: ResponsiveLayout.horizontalPadding(this.isWide),
-        top: 16
-      })
+      .align(Alignment.Top)
+      .scrollBar(BarState.Off)
     }
     .width('100%')
     .height('100%')
@@ -66,6 +71,7 @@ export struct SettingsPage {
       },
       enableComponentSafeArea: true
     })
+    .mode(NavigationMode.Stack)
     .titleMode(HdsNavigationTitleMode.FULL)
     .hideBackButton(true)
     .backgroundColor(HarmonyTokens.pageBackground())
@@ -95,14 +101,18 @@ export struct SettingsPage {
       width: this.themeMode === mode ? 1 : 0,
       color: this.themeMode === mode ? HarmonyTokens.primaryBorder() : Color.Transparent
     })
-    .scale({ x: this.themeMode === mode ? 1 : 0.96, y: this.themeMode === mode ? 1 : 0.96 })
-    .animation({ curve: curves.springMotion(0.34, 0.82, 0.18) })
+    .animation(MotionTheme.content(this.reduceMotion))
+    .animation(undefined)
+    .attributeModifier(PressFeedback.button(this.themeMode, this.reduceMotion, false,
+      this.themeMode === mode ? 1 : 0.96))
+    .animation(MotionTheme.press(this.reduceMotion))
     .accessibilityText(`${title}模式`)
     .accessibilityChecked(this.themeMode === mode)
     .onClick((): void => {
-      ThemeStore.setMode(mode);
-      const context = this.getUIContext().getHostContext() as common.UIAbilityContext;
-      ThemeStore.applySystemMode(context, mode);
+      if (this.themeMode !== mode) {
+        // Index owns application/window configuration; avoid applying it twice.
+        ThemeStore.setMode(mode);
+      }
     })
   }
 

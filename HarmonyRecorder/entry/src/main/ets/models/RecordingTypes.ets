@@ -1,6 +1,7 @@
 export enum RecordingFormat {
   WAV = 'wav',
-  M4A = 'm4a'
+  M4A = 'm4a',
+  FLAC = 'flac'
 }
 
 export enum RecordingState {
@@ -33,20 +34,27 @@ export class RecordingConfig {
     return new RecordingConfig(RecordingFormat.M4A, sampleRate, 0, bitrate, 1);
   }
 
+  static flac(sampleRate: number = 48000): RecordingConfig {
+    return new RecordingConfig(RecordingFormat.FLAC, sampleRate, 16, 0, 1);
+  }
+
   get extension(): string {
-    return this.format === RecordingFormat.WAV ? 'wav' : 'm4a';
+    return this.format;
   }
 
   get formatLabel(): string {
-    return this.format === RecordingFormat.WAV ? 'WAV' : 'M4A';
+    return this.format.toUpperCase();
   }
 
   get sampleRateLabel(): string {
+    if (this.sampleRate <= 0) { return '参数未知'; }
     return this.sampleRate === 44100 ? '44.1 kHz' : `${this.sampleRate / 1000} kHz`;
   }
 
   get encodingDetailLabel(): string {
-    return this.format === RecordingFormat.WAV ? `${this.bitDepth} bit` : `${this.bitrate / 1000} kbps`;
+    if (this.sampleRate <= 0 || this.channels <= 0) { return '文件待检查'; }
+    return this.format !== RecordingFormat.M4A ? `${this.bitDepth} bit` :
+      (this.bitrate > 0 ? `${this.bitrate / 1000} kbps` : 'AAC');
   }
 
   get compactLabel(): string {
@@ -54,11 +62,16 @@ export class RecordingConfig {
   }
 
   get qualityLabel(): string {
-    if (this.format === RecordingFormat.WAV) {
-      return `${this.sampleRateLabel} / ${this.bitDepth} bit / Mono`;
+    if (this.sampleRate <= 0 || this.channels <= 0) { return '文件待检查'; }
+    const channelLabel = this.channels === 1 ? 'Mono' : `${this.channels} channels`;
+    if (this.format !== RecordingFormat.M4A) {
+      return `${this.sampleRateLabel} / ${this.bitDepth} bit / ${channelLabel}`;
+    }
+    if (this.bitrate <= 0) {
+      return `AAC · ${this.sampleRateLabel} · ${this.channels === 1 ? 'Mono' : `${this.channels} channels`}`;
     }
     const quality = this.bitrate >= 256000 ? 'High' : 'Standard';
-    return `${quality} · ${this.bitrate / 1000} kbps · ${this.sampleRateLabel} · Mono`;
+    return `${quality} · ${this.bitrate / 1000} kbps · ${this.sampleRateLabel} · ${channelLabel}`;
   }
 }
 

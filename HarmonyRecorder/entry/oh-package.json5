@@ -1,9 +1,11 @@
 {
   "name": "entry",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "description": "Facilis Recording entry module",
   "main": "",
   "author": "CloudWhiteTower",
   "license": "MIT",
-  "dependencies": {}
+  "dependencies": {
+    "libfacilis_flac.so": "file:./src/main/cpp/types/libfacilis_flac"
+  }
 }

@@ -48,6 +48,7 @@ function load(filename) {
     if (name === '@ohos/hypium') return hypium;
     if (name === '@kit.UIDesignKit') return { hdsMaterial };
     if (name === '@kit.BasicServicesKit') return {};
+    if (name === '@kit.ArkTS') return { util: { TextEncoder } };
     if (name === '@kit.AbilityKit' || name === '@kit.ArkUI' || name === '@kit.CoreFileKit') return {};
     if (name.startsWith('.')) return load(path.resolve(path.dirname(file), name + '.ets'));
     throw new Error(`Unsupported host import: ${name}`);

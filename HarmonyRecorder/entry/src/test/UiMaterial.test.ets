@@ -35,11 +35,13 @@ export default function uiMaterialTest() {
       expect(WaveformMotion.shouldAnimate(RecordingState.PAUSED, true, true)).assertFalse();
       expect(WaveformMotion.shouldAnimate(RecordingState.STOPPED, true, true)).assertFalse();
       expect(WaveformMotion.shouldAnimate(RecordingState.IDLE, true, true)).assertFalse();
+      expect(WaveformMotion.shouldAnimate(RecordingState.RECORDING, true, true, true)).assertFalse();
       expect(WaveformMotion.showsHistory(RecordingState.PAUSED)).assertTrue();
       expect(WaveformMotion.showsHistory(RecordingState.STOPPED)).assertFalse();
     });
     it('caps the visual cadence and scrolling interpolation', 0, () => {
-      expect(WaveformMotion.FRAME_INTERVAL_MS >= 1000 / 30).assertTrue();
+      expect(WaveformMotion.EXPECTED_FRAME_RATE).assertEqual(60);
+      expect(WaveformMotion.MIN_FRAME_RATE < WaveformMotion.EXPECTED_FRAME_RATE).assertTrue();
       expect(WaveformMotion.scrollPhase(-1)).assertEqual(0);
       expect(WaveformMotion.scrollPhase(45)).assertEqual(0.5);
       expect(WaveformMotion.scrollPhase(200)).assertEqual(1);
