@@ -1,51 +1,80 @@
-import { common } from '@kit.AbilityKit';
-import { HarmonyPalette, HarmonyTheme, ThemeMode, ThemeStore } from '../utils/HarmonyTheme';
+import { HdsNavigation, HdsNavigationTitleMode } from '@kit.UIDesignKit';
+import { HarmonyPalette, HarmonyTheme, HarmonyTokens, ThemeMode, ThemeStore } from '../utils/HarmonyTheme';
+import { MaterialRole, MaterialTheme } from '../utils/MaterialTheme';
+import { MotionTheme } from '../utils/MotionTheme';
+import { PressFeedback } from '../utils/PressFeedback';
 import { ResponsiveLayout } from '../utils/ResponsiveLayout';
 
 @Component
 export struct SettingsPage {
   @State private isWide: boolean = false;
   @StorageLink(ThemeStore.MODE_KEY) private themeMode: number = ThemeMode.LIGHT;
+  @StorageLink(MotionTheme.REDUCE_KEY) private reduceMotion: boolean = false;
 
   build() {
-    Column({ space: 0 }) {
-      Row() {
-        Text('设置')
-          .fontSize(this.isWide ? 30 : 26)
-          .fontWeight(FontWeight.Bold)
-          .fontColor(this.palette().textPrimary)
-      }
-      .width(ResponsiveLayout.contentWidth(this.isWide))
-      .padding({
-        left: ResponsiveLayout.horizontalPadding(this.isWide),
-        right: ResponsiveLayout.horizontalPadding(this.isWide),
-        top: this.isWide ? 30 : 18,
-        bottom: 18
-      })
+    HdsNavigation() {
+      Scroll() {
+        Column({ space: 12 }) {
+          Text('外观')
+            .width('100%')
+            .fontSize(13)
+            .fontWeight(FontWeight.Medium)
+            .fontColor(HarmonyTokens.textTertiary())
+            .padding({ left: 4 })
 
-      Column({ space: 12 }) {
-        Text('外观')
+          Row({ space: 12 }) {
+            this.appearanceChoice(
+              $r('sys.symbol.sun_max'),
+              $r('sys.symbol.sun_max_fill'),
+              '浅色',
+              ThemeMode.LIGHT
+            )
+            this.appearanceChoice(
+              $r('sys.symbol.moon'),
+              $r('sys.symbol.moon_fill'),
+              '深色',
+              ThemeMode.DARK
+            )
+          }
           .width('100%')
-          .fontSize(13)
-          .fontColor(this.palette().textTertiary)
-          .padding({ left: 4, bottom: 4 })
-        Row({ space: 16 }) {
-          this.appearanceChoice($r('sys.symbol.sun_max'), $r('sys.symbol.sun_max_fill'), '浅色模式', ThemeMode.LIGHT)
-          this.appearanceChoice($r('sys.symbol.moon'), $r('sys.symbol.moon_fill'), '深色模式', ThemeMode.DARK)
+          .padding(8)
+          .attributeModifier(MaterialTheme.surface(MaterialRole.CONTROL, this.themeMode))
+          .borderRadius(28)
+
         }
-        .width('100%')
+        .width(ResponsiveLayout.contentWidth(this.isWide))
+        .constraintSize({ maxWidth: 720 })
+        .padding({
+          left: ResponsiveLayout.horizontalPadding(this.isWide),
+          right: ResponsiveLayout.horizontalPadding(this.isWide),
+          top: 16,
+          bottom: 120
+        })
       }
-      .width(ResponsiveLayout.contentWidth(this.isWide))
-      .layoutWeight(1)
-      .padding({
-        left: ResponsiveLayout.horizontalPadding(this.isWide),
-        right: ResponsiveLayout.horizontalPadding(this.isWide),
-        bottom: 24
-      })
+      .width('100%')
+      .height('100%')
+      .align(Alignment.Top)
+      .scrollBar(BarState.Off)
     }
     .width('100%')
-    .layoutWeight(1)
-    .backgroundColor(this.palette().pageBackground)
+    .height('100%')
+    .titleBar({
+      content: {
+        title: {
+          mainTitle: '设置',
+          subTitle: 'Facilis Recording'
+        }
+      },
+      style: {
+        scrollEffectOpts: { enableScrollEffect: false },
+        systemMaterialEffect: MaterialTheme.resolve(MaterialRole.NAVIGATION)
+      },
+      enableComponentSafeArea: true
+    })
+    .mode(NavigationMode.Stack)
+    .titleMode(HdsNavigationTitleMode.FULL)
+    .hideBackButton(true)
+    .backgroundColor(HarmonyTokens.pageBackground())
     .onAreaChange((oldValue: Area, newValue: Area): void => {
       this.isWide = ResponsiveLayout.isWide(newValue.width);
     })
@@ -54,29 +83,36 @@ export struct SettingsPage {
   @Builder
   private appearanceChoice(symbol: Resource, selectedSymbol: Resource, title: string, mode: ThemeMode) {
     Button() {
-      if (this.themeMode === mode) {
-        SymbolGlyph(selectedSymbol)
-          .fontSize(27)
-          .fontColor([this.palette().primary])
-      } else {
-        SymbolGlyph(symbol)
-          .fontSize(27)
-          .fontColor([this.palette().textSecondary])
+      Column({ space: 8 }) {
+        SymbolGlyph(this.themeMode === mode ? selectedSymbol : symbol)
+          .fontSize(28)
+          .fontColor([this.themeMode === mode ? HarmonyTokens.primary() : HarmonyTokens.textSecondary()])
+        Text(title)
+          .fontSize(13)
+          .fontWeight(this.themeMode === mode ? FontWeight.Medium : FontWeight.Regular)
+          .fontColor(this.themeMode === mode ? HarmonyTokens.primary() : HarmonyTokens.textSecondary())
       }
     }
-    .width(72)
-    .height(56)
-    .backgroundColor(this.themeMode === mode ? this.palette().primarySubtle : this.palette().surface)
-    .borderRadius(18)
+    .layoutWeight(1)
+    .height(92)
+    .backgroundColor(this.themeMode === mode ? HarmonyTokens.primarySubtle() : Color.Transparent)
+    .borderRadius(22)
     .border({
-      width: this.themeMode === mode ? 2 : 1,
-      color: this.themeMode === mode ? this.palette().primaryBorder : this.palette().divider
+      width: this.themeMode === mode ? 1 : 0,
+      color: this.themeMode === mode ? HarmonyTokens.primaryBorder() : Color.Transparent
     })
-    .accessibilityText(title)
+    .animation(MotionTheme.content(this.reduceMotion))
+    .animation(undefined)
+    .attributeModifier(PressFeedback.button(this.themeMode, this.reduceMotion, false,
+      this.themeMode === mode ? 1 : 0.96))
+    .animation(MotionTheme.press(this.reduceMotion))
+    .accessibilityText(`${title}模式`)
+    .accessibilityChecked(this.themeMode === mode)
     .onClick((): void => {
-      ThemeStore.setMode(mode);
-      const context = this.getUIContext().getHostContext() as common.UIAbilityContext;
-      ThemeStore.applySystemMode(context, mode);
+      if (this.themeMode !== mode) {
+        // Index owns application/window configuration; avoid applying it twice.
+        ThemeStore.setMode(mode);
+      }
     })
   }
 

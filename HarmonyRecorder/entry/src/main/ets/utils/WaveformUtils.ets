@@ -1,5 +1,9 @@
 export class WaveformUtils {
-  static readonly MAX_SAMPLES: number = 96;
+  static readonly MAX_SAMPLES: number = 180;
+  static readonly MIN_VISIBLE_SAMPLES: number = 96;
+  static readonly MAX_VISIBLE_SAMPLES: number = 180;
+  static readonly FADE_FRACTION: number = 0.15;
+  static readonly LIVE_FRACTION: number = 0.20;
   static readonly FLOOR_DECIBELS: number = -60;
   static readonly DISPLAY_FLOOR_DECIBELS: number = -48;
   private static readonly PCM16_MAX_AMPLITUDE: number = 32768;
@@ -103,6 +107,67 @@ export class WaveformUtils {
     const decibels = WaveformUtils.linearToDecibels(sample);
     const normalized = Math.max(0, Math.min(1,
       (decibels - WaveformUtils.DISPLAY_FLOOR_DECIBELS) / -WaveformUtils.DISPLAY_FLOOR_DECIBELS));
-    return Math.max(minimum, Math.pow(normalized, 0.78));
+    return Math.max(minimum, normalized);
+  }
+
+  static visibleSampleCount(width: number): number {
+    const safeWidth = Number.isFinite(width) ? Math.max(0, width) : 0;
+    const estimated = Math.floor(safeWidth / 3.2);
+    return Math.max(WaveformUtils.MIN_VISIBLE_SAMPLES,
+      Math.min(WaveformUtils.MAX_VISIBLE_SAMPLES, estimated));
+  }
+
+  static samplesForWidth(samples: number[], width: number): number[] {
+    const count = WaveformUtils.visibleSampleCount(width);
+    const result: number[] = [];
+    const start = Math.max(0, samples.length - count);
+    for (let index = start; index < samples.length; index++) {
+      result.push(Math.max(0, Math.min(1, Number.isFinite(samples[index]) ? samples[index] : 0)));
+    }
+    while (result.length < count) {
+      result.unshift(0);
+    }
+    return result;
+  }
+
+  static fadeOpacity(index: number, count: number): number {
+    if (count <= 1) {
+      return 1;
+    }
+    const fadeEnd = Math.max(1, Math.floor(count * WaveformUtils.FADE_FRACTION));
+    if (index >= fadeEnd) {
+      return 1;
+    }
+    return Math.max(0, Math.min(1, index / fadeEnd));
+  }
+
+  static liveBlend(index: number, count: number): number {
+    if (count <= 1) {
+      return 1;
+    }
+    const liveStart = count - Math.max(1, Math.floor(count * WaveformUtils.LIVE_FRACTION));
+    if (index <= liveStart) {
+      return 0;
+    }
+    return Math.max(0, Math.min(1, (index - liveStart) / Math.max(1, count - 1 - liveStart)));
+  }
+
+  static decibelY(decibels: number, height: number, floor: number = -48, ceiling: number = 0): number {
+    const safeCeiling = Number.isFinite(ceiling) ? ceiling : 0;
+    const safeFloor = Number.isFinite(floor) && floor < safeCeiling ? floor : safeCeiling - 48;
+    const clamped = Math.max(safeFloor, Math.min(safeCeiling,
+      Number.isFinite(decibels) ? decibels : safeFloor));
+    return (safeCeiling - clamped) / (safeCeiling - safeFloor) *
+      (Number.isFinite(height) ? Math.max(0, height) : 0);
+  }
+
+  static decibelMarks(floor: number = -48, ceiling: number = 0): number[] {
+    const safeCeiling = Number.isFinite(ceiling) ? ceiling : 0;
+    const safeFloor = Number.isFinite(floor) && floor < safeCeiling ? floor : safeCeiling - 48;
+    const marks: number[] = [];
+    for (let index = 0; index < 5; index++) {
+      marks.push(safeCeiling - (safeCeiling - safeFloor) * index / 4);
+    }
+    return marks;
   }
 }

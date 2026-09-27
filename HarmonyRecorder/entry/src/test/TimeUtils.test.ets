@@ -24,5 +24,13 @@ export default function timeUtilsTest() {
       expect(TimeUtils.parseTimestampFromFileName('Recording_20260902_213522_1.wav')).assertEqual(timestamp);
       expect(TimeUtils.parseTimestampFromFileName('Recording_20261302_213522.wav')).assertEqual(0);
     });
+
+    it('creates stable date keys and friendly date section labels', 0, () => {
+      const now = new Date(2026, 8, 5, 12, 0, 0).getTime();
+      expect(TimeUtils.dateSectionKey(now)).assertEqual('2026-09-05');
+      expect(TimeUtils.formatDateSection(now, now)).assertEqual('今天');
+      expect(TimeUtils.formatDateSection(new Date(2026, 8, 4, 20, 0, 0).getTime(), now)).assertEqual('昨天');
+      expect(TimeUtils.formatDateSection(new Date(2026, 7, 28, 20, 0, 0).getTime(), now)).assertEqual('8月28日');
+    });
   });
 }

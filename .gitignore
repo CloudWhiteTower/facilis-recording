@@ -10,6 +10,7 @@
 
 # HarmonyOS / Hvigor outputs and local dependencies
 **/.hvigor/
+**/.cxx/
 **/oh_modules/
 **/build/
 **/entry/build/
@@ -36,7 +37,7 @@ dist/
 *.sha256
 
 # Third-party visual references are retained locally only
-data/motiv-audio-reference/
+data/design-reference-local/
 
 # Operating-system noise
 .DS_Store

@@ -2,6 +2,12 @@
   "module": {
     "name": "entry",
     "type": "entry",
+    "metadata": [
+      {
+        "name": "ohos.arkui.UIMaterial.state",
+        "value": "default"
+      }
+    ],
     "description": "$string:module_desc",
     "mainElement": "EntryAbility",
     "deviceTypes": [
@@ -12,6 +18,9 @@
     "installationFree": false,
     "pages": "$profile:main_pages",
     "requestPermissions": [
+      {
+        "name": "ohos.permission.KEEP_BACKGROUND_RUNNING"
+      },
       {
         "name": "ohos.permission.MICROPHONE",
         "reason": "$string:microphone_permission_reason",
@@ -26,6 +35,7 @@
     "abilities": [
       {
         "name": "EntryAbility",
+        "backgroundModes": ["audioRecording"],
         "srcEntry": "./ets/entryability/EntryAbility.ets",
         "description": "$string:EntryAbility_desc",
         "icon": "$media:layered_image",

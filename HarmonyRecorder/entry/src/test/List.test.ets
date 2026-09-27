@@ -5,6 +5,10 @@ import timeUtilsTest from './TimeUtils.test';
 import waveFileUtilsTest from './WaveFileUtils.test';
 import waveformUtilsTest from './WaveformUtils.test';
 import harmonyThemeTest from './HarmonyTheme.test';
+import uiMaterialTest from './UiMaterial.test';
+import waveformCurveTest from './WaveformCurve.test';
+import waveformMotionTest from './WaveformMotion.test';
+import recordingMetadataTest from './RecordingMetadata.test';
 
 export default function testsuite() {
   recordingConfigTest();
@@ -14,4 +18,8 @@ export default function testsuite() {
   waveFileUtilsTest();
   waveformUtilsTest();
   harmonyThemeTest();
+  uiMaterialTest();
+  waveformCurveTest();
+  waveformMotionTest();
+  recordingMetadataTest();
 }

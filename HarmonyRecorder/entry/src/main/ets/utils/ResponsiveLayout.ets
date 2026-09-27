@@ -6,10 +6,10 @@ export class ResponsiveLayout {
   }
 
   static horizontalPadding(isWide: boolean): number {
-    return isWide ? 40 : 20;
+    return isWide ? 24 : 16;
   }
 
   static contentWidth(isWide: boolean): Length {
-    return isWide ? 880 : '100%';
+    return '100%';
   }
 }

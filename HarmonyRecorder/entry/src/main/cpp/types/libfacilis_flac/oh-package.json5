@@ -1,0 +1,6 @@
+{
+  "name": "libfacilis_flac.so",
+  "version": "1.0.0",
+  "description": "Facilis native FLAC recorder types",
+  "types": "./index.d.ts"
+}

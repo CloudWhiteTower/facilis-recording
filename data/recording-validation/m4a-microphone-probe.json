@@ -1,0 +1,20 @@
+{
+    "programs": [
+
+    ],
+    "stream_groups": [
+
+    ],
+    "streams": [
+        {
+            "codec_name": "aac",
+            "sample_rate": "48000",
+            "channels": 1,
+            "bit_rate": "126427"
+        }
+    ],
+    "format": {
+        "duration": "14.442438",
+        "size": "231761"
+    }
+}

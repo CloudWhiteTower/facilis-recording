@@ -1,0 +1,15 @@
+{
+  "file": "Recording_20260927_172545.wav",
+  "bytes": 178331564,
+  "rate": 48000,
+  "bits": 16,
+  "channels": 1,
+  "samples": 89165760,
+  "seconds": 1857.62,
+  "riff_data_size_exact": true,
+  "decode_error_bytes": 0,
+  "monitor_samples": 52,
+  "rss_min_kib": 240892,
+  "rss_max_kib": 331980,
+  "rss_last_kib": 279864
+}
