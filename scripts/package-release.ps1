@@ -31,7 +31,10 @@ $hap = [IO.Compression.ZipFile]::OpenRead($hapPath)
 try {
   $reader = [IO.StreamReader]::new($hap.GetEntry('module.json').Open())
   try { $manifest = $reader.ReadToEnd() | ConvertFrom-Json } finally { $reader.Dispose() }
-  if ($manifest.app.versionName -ne $Version -or $manifest.app.debug -ne $false) {
+  if ($manifest.app.versionName -ne $Version -or
+    $manifest.app.versionCode -ne $sourceManifest.app.versionCode -or
+    $manifest.app.bundleName -ne $sourceManifest.app.bundleName -or
+    $manifest.app.debug -ne $false) {
     throw 'Expected a Release HAP matching the source version'
   }
   foreach ($entry in @('libs/arm64-v8a/libfacilis_flac.so', 'libs/x86_64/libfacilis_flac.so',

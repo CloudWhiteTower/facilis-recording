@@ -1,0 +1,21 @@
+{
+  "date": "2026-10-08",
+  "version": "3.0.1",
+  "versionCode": 3000001,
+  "device": { "model": "MatePad Air", "api": 24, "physical": true },
+  "builds": { "debug": true, "release": true, "ohosTest": true },
+  "host": { "run": 185, "pass": 185, "failure": 0 },
+  "deviceTests": {
+    "run": 66, "pass": 66, "failure": 0, "error": 0,
+    "unit": 57, "conversion": 6, "streamingAndCancellation": 3, "elapsedMs": 16204
+  },
+  "independentDecode": { "files": 51, "losslessComparisons": 5, "aacTailAndPrimingChecks": 15, "failures": 0 },
+  "nativeLibrariesMatchV300": true,
+  "nativeLibrarySha256": {
+    "arm64-v8a": "7e352fcc985d8322da35493a7331e1529a5aaf67ccf246616021d20454142914",
+    "x86_64": "8b5b8d10273db5c7f82f611c6bc06a08d853e27ae32e9571aa04092327515823"
+  },
+  "installation": { "overwrite": true, "uninstalled": false },
+  "crashLogsFound": false,
+  "newMicrophoneOrSoakTest": false
+}

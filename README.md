@@ -1,6 +1,6 @@
 # Facilis Recording
 
-一款简洁、纯离线的 HarmonyOS 原生录音应用。它使用 ArkTS、ArkUI 与系统音频接口实现 WAV、AAC/M4A 和 FLAC 录制、实时波形、本地管理、播放与格式转换。当前版本为 **v3.0.0**，面向 HarmonyOS SDK 6.1.1（API 24）的手机和平板。
+一款简洁、纯离线的 HarmonyOS 原生录音应用。它使用 ArkTS、ArkUI 与系统音频接口实现 WAV、AAC/M4A 和 FLAC 录制、实时波形、本地管理、播放与格式转换。当前版本为 **v3.0.1**，面向 HarmonyOS SDK 6.1.1（API 24）的手机和平板。
 
 > `facilis` 是拉丁语形容词，意为“容易的、简便的”。这里将它作为品牌词与英文 `Recording` 组合；仓库名采用适合 URL 的 `facilis-recording`。
 
@@ -8,7 +8,7 @@
   <img src="docs/assets/icon-preview.png" width="128" alt="Facilis Recording icon">
 </p>
 
-![手机录音页](data/v2-validation/api24-light-wave-final-2026-09-23.png)
+![MatePad Air 竖屏录音页](data/v3-validation/recorder-portrait.png)
 
 ## 功能
 
@@ -25,6 +25,22 @@
 - 页面切换：可左右滑动或点击底部图标；录音和播放的竖屏布局统一，横屏按宽高与可用空间分栏。录音页隐藏文字标题，保留必要的质量、计时和无障碍名称。
 - 后台录音：用户开始录音后申请系统录音长时任务，暂停或结束时释放，并显示系统通知。
 - 隐私：声明麦克风与后台运行权限，不包含网络权限或第三方运行时 SDK，录音默认保存在应用私有目录。
+
+## 音频实现与质量
+
+核心音频采集、AAC/FLAC 编解码和播放使用官方系统实现；应用代码负责把这些接口连接成可保存、可恢复的录音流程。
+
+| 环节 | 系统接口 | 应用负责的部分 |
+| --- | --- | --- |
+| 采集 | `AudioCapturer`、`AVRecorder` | 参数核对、录音状态、缓冲写入和异常收尾 |
+| 格式转换 | Native `AudioCodec`、`AVDemuxer`、`AVMuxer` | PCM 表示转换、帧边界、进度、取消及文件登记 |
+| 播放 | `AVPlayer` | 文件校验、加载/拖动/控制超时、音频打断和资源释放 |
+
+WAV 保存采集到的整数 PCM；支持范围内的 WAV/FLAC 无损转换保留样点。AAC 为有损编码，转成 WAV/FLAC 或提高码率不会恢复此前丢失的信息。24-bit 文件表示存储精度，不代表麦克风具有 24-bit 有效精度。
+
+当前使用默认 `MIC` 音频源，核对的是采集器实际流参数，尚未实现设备最大能力自动探测、`UNPROCESSED` 纯净录音模式或应用级降噪。系统接口说明见[官方音频源](https://github.com/openharmony/docs/blob/master/zh-cn/application-dev/reference/apis-audio-kit/arkts-apis-audio-e.md#sourcetype8)与[音频同步解码](https://developer.huawei.com/consumer/cn/doc/harmonyos-guides/synchronous-audio-decoding)；具体处理和限制见[音频链路](docs/AUDIO_PIPELINE.md)。
+
+后续优化计划：比较普通/纯净采集模式；按设备能力评估声道、位深和采样率扩展；测量底噪、动态范围、失真、帧时间和功耗。上述项目尚未作为已实现功能或音质提升结论。
 
 ## 项目结构
 
@@ -61,9 +77,10 @@ devecocli build --product default --build-mode release
 
 ## 下载与发布状态
 
-- [下载 v3.0.0](https://github.com/CloudWhiteTower/facilis-recording/releases/tag/v3.0.0)：提供 Release HAP、APP ZIP、源码归档与 SHA-256 清单，详见[附件说明](release/v3.0.0/README.md)。代码变更见 [PR #2](https://github.com/CloudWhiteTower/facilis-recording/pull/2)。
+- [下载 v3.0.1](https://github.com/CloudWhiteTower/facilis-recording/releases/tag/v3.0.1)：文档与代码维护版本，整理音频接口分工和转码固定参数名称，保留 v3.0.0 的音频行为。提供 Release HAP、APP ZIP、源码归档与 SHA-256 清单，详见[附件说明](release/v3.0.1/README.md)。代码变更见 [PR #2](https://github.com/CloudWhiteTower/facilis-recording/pull/2)。
 - **公开 HAP 需由开发者签名后安装**。附件不包含本地调试证书或设备 Profile；GitHub 发布不代表已通过 AppGallery 审核或上架。
-- v3 Host 回归 185/185，真实 MatePad Air 回归 80/80，十分钟 WAV 实录通过；另通过 PCM 精度检查、66 个文件的完整解码及无损/AAC 边界检查。字体、行高、控件及横竖屏布局已统一。当前结果见 [v3 验证](docs/V3_OPTIMIZATION.md)；v2 模拟器结果保留在[历史音频记录](data/audio-functional-validation/README.md)。
+- v3.0.1 Host 185/185、真机相关回归 66/66，Debug/Release/ohosTest 构建通过；本次转换夹具 51 个文件独立解码、5 组无损比较和 15 组 AAC 边界检查通过，见 [v3.0.1 验证](data/v3.0.1-validation/README.md)。
+- v3.0.0 Host 回归 185/185，真实 MatePad Air 回归 80/80，十分钟 WAV 实录通过；另通过 PCM 精度检查、66 个文件的完整解码及无损/AAC 边界检查。字体、行高、控件及横竖屏布局已统一。这些结果保留在 [v3.0.0 验证](docs/V3_OPTIMIZATION.md)，v3.0.1 的复验单独记录于[发布说明](release/v3.0.1/README.md)；v2 模拟器结果保留在[历史音频记录](data/audio-functional-validation/README.md)。
 - HiSmartPerf 帧时间、功耗、锁屏策略和扬声器/耳机主观听感仍待专门验收；加速测试不计作真实设备长录音。
 
 正式上架还需要开发者本人完成账号实名、APP ID/最终包名确认、发布签名、版权/备案材料和 AGC 提交。逐项状态见 [AppGallery 发布清单](docs/APPGALLERY_RELEASE.md)。

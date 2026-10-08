@@ -36,6 +36,10 @@ constexpr int64_t INPUT_POLL_US = 1000;
 constexpr auto STALL_LIMIT = std::chrono::seconds(5);
 constexpr size_t CHUNK_SAMPLES = 32768;
 constexpr size_t CODEC_BATCH_FRAMES = 8;
+constexpr size_t AAC_LC_FRAME_SAMPLES = 1024;
+constexpr size_t DEMUX_BUFFER_BYTES = 64 * 1024;
+// Leave the final portion for encoder drain, file sync and library registration.
+constexpr double PCM_PROGRESS_LIMIT = 0.97;
 
 void Need(bool value, const char *message)
 {
@@ -143,7 +147,7 @@ private:
 class AacWriter final : public NativePcmWriter {
 public:
     AacWriter(Conversion &job, bool floatInput) : job_(job), floatInput_(floatInput),
-        frameBytes_(1024 * (floatInput ? 4 : 2))
+        frameBytes_(AAC_LC_FRAME_SAMPLES * (floatInput ? 4 : 2))
     {
         try {
             codec_ = OH_AudioCodec_CreateByMime(OH_AVCODEC_MIMETYPE_AUDIO_AAC, true);
@@ -392,7 +396,7 @@ void ConvertWav(Conversion &job)
         WritePcm(*writer, input.data(), count, sourceFormat, targetFormat, scratch);
         done += count;
         job.samples += count / (depth / 8);
-        job.progress.store(0.97 * static_cast<double>(done) / dataSize);
+        job.progress.store(PCM_PROGRESS_LIMIT * static_cast<double>(done) / dataSize);
     }
     job.CheckCancelled(); writer->Finish();
 }
@@ -450,7 +454,7 @@ public:
         Check(OH_AVDemuxer_SelectTrackByID(demuxer_, track_), "Select audio track");
         Check(OH_AudioCodec_Start(codec_), "Start audio decoder"); started_ = true;
         writer_ = MakeWriter(job_, pcmFormat_ == SAMPLE_F32LE);
-        Buffer demuxBuffer(OH_AVBuffer_Create(64 * 1024), OH_AVBuffer_Destroy);
+        Buffer demuxBuffer(OH_AVBuffer_Create(DEMUX_BUFFER_BYTES), OH_AVBuffer_Destroy);
         Need(demuxBuffer != nullptr, "Could not allocate demuxer sample buffer");
         auto deadline = Clock::now() + STALL_LIMIT;
         bool inputEos = false;
@@ -551,8 +555,8 @@ private:
         // Report PCM actually consumed rather than compressed frames merely
         // queued: the progress bar follows work completed by the whole pipeline.
         if (durationUs_ > 0) {
-            const double progress = std::min(0.97, static_cast<double>(job_.samples) * 1000000.0 /
-                (static_cast<double>(job_.rate) * durationUs_) * 0.97);
+            const double progress = std::min(PCM_PROGRESS_LIMIT, static_cast<double>(job_.samples) * 1000000.0 /
+                (static_cast<double>(job_.rate) * durationUs_) * PCM_PROGRESS_LIMIT);
             job_.progress.store(std::max(job_.progress.load(), progress));
         }
         return true;

@@ -1,6 +1,8 @@
 # Facilis Recording
 
-HarmonyOS Stage ArkTS 本地录音应用，当前版本为 **3.0.0 / 3000000**，最低兼容与目标 SDK 均为 **6.1.1（API 24）**。它支持选择质量、录制、暂停/继续、本地保存、管理、播放与格式转换。
+HarmonyOS Stage ArkTS 本地录音应用，当前版本为 **3.0.1 / 3000001**，最低兼容与目标 SDK 均为 **6.1.1（API 24）**。它支持选择质量、录制、暂停/继续、本地保存、管理、播放与格式转换。
+
+v3.0.1 整理 README、官方音频接口分工和转码固定参数名称，录音参数、编解码器、缓冲大小与调度行为沿用 v3.0.0。此次复验见 [v3.0.1 发布说明](../release/v3.0.1/README.md)。
 
 ## 当前功能
 
@@ -46,6 +48,12 @@ PlayerPage → PlaybackService → AVPlayer
 
 `entry/src/main/cpp/` 提供 FLAC 录制与音频转换的异步 N-API 桥。当前 Release 同时包含 arm64-v8a 和 x86_64 原生库；v3 的实际设备结果见[优化与验证](../docs/V3_OPTIMIZATION.md)。
 
+### 音频接口分工
+
+AAC/FLAC 编解码由系统 `AudioCodec` 执行，转换使用 `AVDemuxer` 解封装和 `AVMuxer` 封装。Native 层负责缓冲调度、PCM 表示转换、AAC 尾帧和预热样点处理、FLAC 元数据及文件收尾；没有自研压缩编解码器。`pcm_conversion.h` 仅改变 PCM 的存储表示，保留样点顺序、采样率和声道。
+
+当前采集使用 `SOURCE_TYPE_MIC`；`getStreamInfo()` 用于核对已经创建的采集流，不等同于枚举设备最大采集能力。`SOURCE_TYPE_UNPROCESSED` 纯净模式、设备能力自动选择及应用级降噪尚未实现。普通/纯净模式、同步/异步调度的效果需要在同一设备与声源条件下比较，当前不声明音质、速度或功耗提升比例。
+
 ## 构建与运行
 
 本目录是 DevEco 工程根目录。推荐使用 DevEco CLI：
@@ -74,7 +82,7 @@ devecocli emulator license accept
 devecocli emulator start 'Pura 90'
 ```
 
-公开仓库不包含签名材料。首次部署前，请在 DevEco Studio 中为自己的应用包名配置调试签名；正式发布则按 AGC 当前流程配置发布签名。[v3.0.0 附件](../release/v3.0.0/README.md)中的 HAP 与 APP 均未签名，不能直接作为已签名安装包使用。
+公开仓库不包含签名材料。首次部署前，请在 DevEco Studio 中为自己的应用包名配置调试签名；正式发布则按 AGC 当前流程配置发布签名。[v3.0.1 附件](../release/v3.0.1/README.md)中的 HAP 与 APP 均未签名，不能直接作为已签名安装包使用。
 
 ## 测试
 
@@ -141,7 +149,9 @@ devecocli build --modules entry@ohosTest
 
 ## 验证状态
 
-2026-10-08 v3：Host 185/185，PCM 精度/内存检查 5/5，独立报告工具检查 7/7，Debug、Release、测试包构建通过，版本为 3.0.0 / 3000000。最终 Release 已覆盖安装到真实 MatePad Air，回归 80/80，含原生双向滑动、录音页及播放器横竖屏、三种格式录制/播放、转换和 AAC 边界用例；十分钟 WAV 实录及 66 个文件的独立解码通过。修复满输入队列查询错误、AAC 不完整尾帧和解码预热帧；已有录音保留，详见 [v3 验证记录](../docs/V3_OPTIMIZATION.md)。
+2026-10-08 v3.0.1：Host 185/185、Debug/Release/ohosTest 构建通过。真实 MatePad Air 覆盖升级后，单元、转换与流式/取消检查 66/66；51 个转换夹具独立解码、5 组无损比较和 15 组 AAC 尾部/延迟检查通过。两个 ABI 的原生音频库与 v3.0.0 SHA-256 相同。本次未重复麦克风长录音或界面验收，详细结果见 [v3.0.1 验证](../data/v3.0.1-validation/README.md)。
+
+2026-10-08 v3.0.0：Host 185/185，PCM 精度/内存检查 5/5，独立报告工具检查 7/7，Debug、Release、测试包构建通过，版本为 3.0.0 / 3000000。最终 Release 已覆盖安装到真实 MatePad Air，回归 80/80，含原生双向滑动、录音页及播放器横竖屏、三种格式录制/播放、转换和 AAC 边界用例；十分钟 WAV 实录及 66 个文件的独立解码通过。修复满输入队列查询错误、AAC 不完整尾帧和解码预热帧；已有录音保留，详见 [v3 验证记录](../docs/V3_OPTIMIZATION.md)。
 
 2026-09-27 功能回归：Debug、Release、ohosTest 构建通过，Host 166/166；API 24 平板模拟器 67/67（52 单元、10 FLAC 集成、5 转换集成）通过。15 个文件（11 个转换输出、4 个输入样本）由 FFmpeg 完整解码，5 组 PCM 逐样点一致。WAV、FLAC、M4A 既有录音的隔离副本均通过头/中/尾服务播放；系统文件选择器保存的 FLAC 副本与原件 SHA-256 一致。
 
@@ -153,4 +163,4 @@ devecocli build --modules entry@ohosTest
 
 ## 暂未实现
 
-未实现 DSP、手动音频输入设备选择、重采样、声道混合、24-bit FLAC、RF64 或自动分卷。当前转换限 WAV/FLAC/M4A、44.1/48 kHz 和单声道；AAC 是有损编码，不能通过转成 WAV/FLAC 恢复已丢失的信息。完整边界见[音频链路说明](../docs/AUDIO_PIPELINE.md)。
+未实现 DSP、纯净采集模式、设备最大能力自动探测、手动音频输入设备选择、重采样、声道混合、24-bit FLAC、RF64 或自动分卷。当前转换限 WAV/FLAC/M4A、44.1/48 kHz 和单声道；AAC 是有损编码，不能通过转成 WAV/FLAC 恢复已丢失的信息。完整边界见[音频链路说明](../docs/AUDIO_PIPELINE.md)。
