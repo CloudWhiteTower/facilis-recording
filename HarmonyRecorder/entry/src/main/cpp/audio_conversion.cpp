@@ -32,6 +32,7 @@ using Format = std::unique_ptr<OH_AVFormat, decltype(&OH_AVFormat_Destroy)>;
 using Buffer = std::unique_ptr<OH_AVBuffer, decltype(&OH_AVBuffer_Destroy)>;
 using Clock = std::chrono::steady_clock;
 constexpr int64_t WAIT_US = 20000;
+constexpr int64_t INPUT_POLL_US = 1000;
 constexpr auto STALL_LIMIT = std::chrono::seconds(5);
 constexpr size_t CHUNK_SAMPLES = 32768;
 constexpr size_t CODEC_BATCH_FRAMES = 8;
@@ -183,7 +184,13 @@ public:
     }
     void Finish() override
     {
-        if (!pending_.empty()) { Push(pending_.data(), pending_.size(), false); pending_.clear(); }
+        if (!pending_.empty()) {
+            // Some device encoders ignore an incomplete AAC PCM frame. Preserve
+            // every source sample and pad only the final frame with silence.
+            pending_.resize(frameBytes_, 0);
+            Push(pending_.data(), pending_.size(), false);
+            pending_.clear();
+        }
         Need(samples_ > 0, "Converted audio contains no samples");
         Push(nullptr, 0, true);
         Drain(true);
@@ -495,7 +502,11 @@ private:
     {
         job_.CheckCancelled();
         uint32_t index = 0;
-        const auto result = OH_AudioCodec_QueryInputBuffer(codec_, &index, 0);
+        // A full AVBufferQueue queried with zero timeout returns NO_FREE_BUFFER,
+        // which AudioCodec maps to INVALID_VAL instead of TRY_AGAIN. A bounded
+        // positive wait produces the retryable timeout and still returns at once
+        // when an input buffer is ready; keep output polling non-blocking.
+        const auto result = OH_AudioCodec_QueryInputBuffer(codec_, &index, INPUT_POLL_US);
         if (result == AV_ERR_TRY_AGAIN_LATER) { return false; }
         Check(result, "Query decoder input");
         auto *buffer = OH_AudioCodec_GetInputBuffer(codec_, index);
@@ -578,6 +589,9 @@ private:
         Check(OH_AVBuffer_GetBufferAttr(buffer, &attr), "Read decoded PCM attributes");
         ++outputBuffers_; lastOutputSize_ = attr.size; lastOutputFlags_ = attr.flags;
         if (attr.flags & AVCODEC_BUFFER_FLAGS_EOS) { return true; }
+        // Priming frames marked DISCARD must still be fed to the decoder, but
+        // their decoded PCM is not part of the presentation timeline.
+        if (attr.flags & AVCODEC_BUFFER_FLAGS_DISCARD) { return false; }
         // Audio decoder output is PCM. CODEC_DATA may be propagated from a
         // compressed input; unlike an encoder output it is not a header to drop.
         if (attr.size == 0) { return false; }

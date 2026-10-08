@@ -194,6 +194,23 @@ export default function conversionIntegrationTest() {
       const aac = await convert(source, 'from_24bit.m4a', 'm4a');
       await convert(aac, 'decoded_24bit_aac.wav', 'wav');
     });
+    it('retains AAC tails and trims priming at subframe and frame boundaries', 0, async () => {
+      for (const rate of [44100, 48000]) {
+        for (const depth of [16, 24]) {
+          for (const samples of [137, 1024, 1025]) {
+            const source = waveFixture(rate, depth, samples);
+            const name = `aac_tail_${rate}_${depth}_${samples}`;
+            const aac = await convert(source, `${name}.m4a`, 'm4a');
+            const decoded = await convert(aac, `${name}.wav`, 'wav');
+            const metadata = AudioFileUtils.read(decoded, 'wav');
+            expect(metadata !== undefined).assertTrue();
+            if (metadata === undefined) { throw new Error('AAC tail fixture is unreadable'); }
+            const actualSamples = metadata.dataLength / (metadata.config.bitDepth / 8);
+            expect(actualSamples >= samples && actualSamples < samples + 1024).assertTrue();
+          }
+        }
+      }
+    });
     it('cancels native conversion and releases descriptors without touching source', 0, async () => {
       const sourcePath = waveFixture(48000, 16, 48000);
       const source = fileIo.openSync(sourcePath, fileIo.OpenMode.READ_ONLY);

@@ -61,9 +61,9 @@ devecocli build --product default --build-mode release
 
 ## 下载与发布状态
 
-- v3 代码已上传至 [PR #2](https://github.com/CloudWhiteTower/facilis-recording/pull/2)，安装包、源码归档及 SHA-256 清单已上传至维护者可见的发行草稿。最终发行版待真机验证后公开，详见[附件说明](release/v3.0.0/README.md)。
+- [下载 v3.0.0](https://github.com/CloudWhiteTower/facilis-recording/releases/tag/v3.0.0)：提供 Release HAP、APP ZIP、源码归档与 SHA-256 清单，详见[附件说明](release/v3.0.0/README.md)。代码变更见 [PR #2](https://github.com/CloudWhiteTower/facilis-recording/pull/2)。
 - **公开 HAP 需由开发者签名后安装**。附件不包含本地调试证书或设备 Profile；GitHub 发布不代表已通过 AppGallery 审核或上架。
-- v3 Host 回归 185/185，另通过全部 16/24-bit 取值的 PCM 精度检查和独立报告工具回归；统一各页字体、行高及控件尺度，并核对实际采集参数。当前设备与独立解码结果见 [v3 验证](docs/V3_OPTIMIZATION.md)；v2 的模拟器验证保留在[历史音频记录](data/audio-functional-validation/README.md)。
+- v3 Host 回归 185/185，真实 MatePad Air 回归 80/80，十分钟 WAV 实录通过；另通过 PCM 精度检查、66 个文件的完整解码及无损/AAC 边界检查。字体、行高、控件及横竖屏布局已统一。当前结果见 [v3 验证](docs/V3_OPTIMIZATION.md)；v2 模拟器结果保留在[历史音频记录](data/audio-functional-validation/README.md)。
 - HiSmartPerf 帧时间、功耗、锁屏策略和扬声器/耳机主观听感仍待专门验收；加速测试不计作真实设备长录音。
 
 正式上架还需要开发者本人完成账号实名、APP ID/最终包名确认、发布签名、版权/备案材料和 AGC 提交。逐项状态见 [AppGallery 发布清单](docs/APPGALLERY_RELEASE.md)。

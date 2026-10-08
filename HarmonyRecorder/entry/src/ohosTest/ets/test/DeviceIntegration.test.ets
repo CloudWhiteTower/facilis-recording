@@ -266,6 +266,56 @@ export default function deviceIntegrationTest() {
       });
     });
   }
+  if (parameters['playerLayout'] === 'true' || parameters['-s playerLayout'] === 'true') {
+    describe('responsivePlayerLayout', () => {
+      it('keeps a real recording readable and playable in both orientations', 0, async () => {
+        const delegator = abilityDelegatorRegistry.getAbilityDelegator();
+        await delegator.startAbility({ bundleName: 'com.example.harmonyrecorder', abilityName: 'EntryAbility' });
+        const context = (await delegator.getCurrentTopAbility()).context;
+        const driver = Driver.create();
+        const original = await driver.getDisplayRotation();
+        const previous = RecordingRepository.list(context).map((item: RecordingInfo): string => item.id).sort();
+        const temporary = `${context.cacheDir}/visual_player_${Date.now()}.wav`;
+        let recording: RecordingInfo | undefined = undefined;
+        try {
+          // A cached opt-in microphone fixture, never a historical user recording.
+          fileIo.copyFileSync(`${delegator.getAppContext().cacheDir}/v3-validation/microphone.wav`, temporary);
+          const metadata = AudioFileUtils.read(temporary, 'wav');
+          if (metadata === undefined) { throw new Error('Run the capture fixtures before playerLayout'); }
+          recording = RecordingRepository.importCompletedFile(context, temporary, metadata.config, 'Facilis');
+          await (await driver.waitForComponent(ON.id('tab-1'), 5000)).click();
+          await (await driver.waitForComponent(ON.text(recording.displayName), 5000)).click();
+          for (const rotation of [DisplayRotation.ROTATION_0, DisplayRotation.ROTATION_90]) {
+            await driver.setDisplayRotation(rotation); await delay(1500);
+            const size = await driver.getDisplaySize();
+            const controls = await (await driver.waitForComponent(ON.id('player-controls'), 5000)).getBounds();
+            const timeline = await (await driver.waitForComponent(ON.id('player-timeline'), 5000)).getBounds();
+            const overview = await (await driver.waitForComponent(ON.id('player-overview'), 5000)).getBounds();
+            expect(controls.left >= 0 && controls.right <= size.x && controls.bottom <= size.y).assertTrue();
+            expect(timeline.bottom <= controls.top).assertTrue();
+            if (size.x <= size.y) { expect(overview.bottom <= timeline.top).assertTrue(); }
+            const play = await driver.waitForComponent(ON.id('player-toggle'), 5000);
+            expect(await play.isEnabled()).assertTrue();
+            await play.click(); await delay(600);
+            await (await driver.findComponent(ON.id('player-toggle'))).click();
+            expect(await driver.screenCap(`${delegator.getAppContext().cacheDir}/facilis-player-${rotation}.png`))
+              .assertTrue();
+          }
+        } finally {
+          if (await driver.findComponent(ON.id('player-toggle')) !== null) { await driver.pressBack(); }
+          await driver.setDisplayRotation(original);
+          if (recording !== undefined) {
+            RecordingRepository.permanentlyDelete(context, RecordingRepository.moveToRecentlyDeleted(context, recording));
+          }
+          if (fileIo.accessSync(temporary)) { fileIo.unlinkSync(temporary); }
+          const tab = await driver.findComponent(ON.id('tab-0'));
+          if (tab !== null) { await tab.click(); }
+        }
+        expect(RecordingRepository.list(context).map((item: RecordingInfo): string => item.id).sort().join('|'))
+          .assertEqual(previous.join('|'));
+      });
+    });
+  }
   const playbackFile = parameters['playbackFile'] || parameters['-s playbackFile'] || '';
   if (playbackFile.length > 0) {
     describe('savedRecordingPlayback', () => {

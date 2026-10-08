@@ -1,6 +1,6 @@
 # 录音、文件与转换链路
 
-v3（2026-10-08）进一步优化缓冲、编解码调度、WAV 中途检查点、批量文件操作与播放控制超时，并核对实际 PCM 采集参数。公共 PCM 函数已通过全部 16/24-bit 取值的 F32/S32 精度往返与内存检查；新的真机收音、编解码、听感及长录音仍待解锁。最新实现及验证见 [v3 全应用优化](V3_OPTIMIZATION.md)；下文保留 v2 功能链路和当时的验证记录。
+v3（2026-10-08）进一步优化缓冲、编解码调度、WAV 中途检查点、批量文件操作与播放控制超时，并核对实际 PCM 采集参数。公共 PCM 函数已通过全部 16/24-bit 取值的 F32/S32 精度往返与内存检查；真实 MatePad Air 回归 80/80、三格式麦克风录制/播放、十分钟 WAV 和独立解码通过。真机发现并修复输入缓冲查询错误、AAC 尾帧丢失及解码预热样点写入问题。最新实现及验证见 [v3 全应用优化](V3_OPTIMIZATION.md)；下文保留 v2 功能链路和当时的验证记录，主观听感与功耗尚未专门测量。
 
 更新日期：2026-09-27。本轮针对“录音无法打开或没有声音”检查并修改功能链路。
 
@@ -45,7 +45,7 @@ WAV 使用 AudioCapturer 采集 PCM，保留所选 44.1/48 kHz、16/24 bit、单
 
 本应用当前转换范围为 44.1/48 kHz、单声道；不做重采样或声道混合。这是当前实现范围，不是 FLAC 格式本身的限制。FLAC 格式支持的参数范围远大于此。[FLAC 规范 RFC 9639](https://www.rfc-editor.org/rfc/rfc9639.html)
 
-AAC 按编码帧处理，文件末尾可能带填充样点。本次 48,037 样点输入编码后解码为 48,128 样点，44,137 样点输入解码为 45,056 样点；应用解码输出与 FFmpeg 一致。这些 AAC 路径不承诺与未压缩原件逐样点相同。
+AAC 按编码帧处理，文件末尾可能带填充样点。2026-09-27 的模拟器样本中，48,037 样点输入编码后解码为 48,128 样点，44,137 样点输入解码为 45,056 样点。v3 在真机中进一步核对短于一帧、整帧及一帧多一个样点的输入：最后一帧最多补齐 1023 个静音样点，编码预热帧不写入转换结果；17 组独立检查的应用解码样点数均与 FFmpeg 一致。这些 AAC 路径不承诺与未压缩原件逐样点相同。
 
 原生实现参考官方[音频同步解码](https://developer.huawei.com/consumer/cn/doc/harmonyos-guides/synchronous-audio-decoding)、[音频同步编码](https://developer.huawei.com/consumer/cn/doc/harmonyos-guides/synchronous-audio-encoding)、[解封装](https://developer.huawei.com/consumer/cn/doc/harmonyos-guides/audio-video-demuxer)与[AVCodec 格式支持](https://developer.huawei.com/consumer/cn/doc/harmonyos-guides/avcodec-support-formats)。纯音频转换使用 AVSource、AVDemuxer、AudioCodec 与 AVMuxer。
 

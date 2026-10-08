@@ -121,7 +121,7 @@ c++ -std=c++17 -O2 -Wall -Wextra -Werror -fsanitize=address,undefined -fno-omit-
 ./.codex/test-native-pcm
 ```
 
-独立报告工具检查 4/4，需要 FFmpeg/ffprobe 在 PATH 中；生成的临时夹具在检查结束后清理：
+独立报告工具检查 7/7，需要 FFmpeg/ffprobe 在 PATH 中；生成的临时夹具在检查结束后清理，包含 AAC 尾部截断与额外延迟样点的检出：
 
 ```text
 node scripts/test-audio-stream-validator.cjs
@@ -141,7 +141,7 @@ devecocli build --modules entry@ohosTest
 
 ## 验证状态
 
-2026-10-08 v3：Host 185/185，PCM 精度/内存检查 5/5，独立报告工具检查 4/4，Debug、Release、测试包构建通过，版本为 3.0.0 / 3000000。包含原生左右滑动、统一的竖屏布局、横屏高度适配、字体/控件共同尺度、录音标题移除及实际 PCM 采集参数核对；最新包的真机覆盖安装、手势和音频验证等待平板解锁，后续结果以 [v3 验证记录](../docs/V3_OPTIMIZATION.md)为准。
+2026-10-08 v3：Host 185/185，PCM 精度/内存检查 5/5，独立报告工具检查 7/7，Debug、Release、测试包构建通过，版本为 3.0.0 / 3000000。最终 Release 已覆盖安装到真实 MatePad Air，回归 80/80，含原生双向滑动、录音页及播放器横竖屏、三种格式录制/播放、转换和 AAC 边界用例；十分钟 WAV 实录及 66 个文件的独立解码通过。修复满输入队列查询错误、AAC 不完整尾帧和解码预热帧；已有录音保留，详见 [v3 验证记录](../docs/V3_OPTIMIZATION.md)。
 
 2026-09-27 功能回归：Debug、Release、ohosTest 构建通过，Host 166/166；API 24 平板模拟器 67/67（52 单元、10 FLAC 集成、5 转换集成）通过。15 个文件（11 个转换输出、4 个输入样本）由 FFmpeg 完整解码，5 组 PCM 逐样点一致。WAV、FLAC、M4A 既有录音的隔离副本均通过头/中/尾服务播放；系统文件选择器保存的 FLAC 副本与原件 SHA-256 一致。
 

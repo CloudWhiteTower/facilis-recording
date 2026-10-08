@@ -70,7 +70,33 @@ async function inspect(name) {
     }
   }
   if (byName.has('source_48000_24_48037.wav')) compare('source_48000_24_48037.wav', 'preserved_24.wav');
-  const failures = results.filter(item => !item.valid).length + comparisons.filter(item => !item.pcmBitExact).length;
-  console.log(JSON.stringify({ results, losslessComparisons: comparisons, failures }, null, 2));
+  const aacChecks = [];
+  const checkAac = (source, encoded, decoded) => {
+    const a = byName.get(source), b = byName.get(encoded), c = byName.get(decoded);
+    const sameFormat = !!a?.valid && !!b?.valid && !!c?.valid &&
+      a.sampleRate === b.sampleRate && b.sampleRate === c.sampleRate &&
+      a.channels === b.channels && b.channels === c.channels;
+    aacChecks.push({ source, encoded, decoded,
+      tailPreserved: sameFormat && b.decodedFrames >= a.decodedFrames && b.decodedFrames < a.decodedFrames + 1024,
+      primingTrimmed: sameFormat && c.decodedFrames === b.decodedFrames });
+  };
+  for (const rate of [44100, 48000]) {
+    const stress = `stream_${rate}_${rate * 60 + 37}.wav`;
+    if (byName.has(stress)) checkAac(stress, `stress_${rate}.m4a`, `aac_${rate}.wav`);
+  }
+  for (const [source, encoded, decoded] of [
+    ['source_48000_16_48037.wav', 'from_flac_48000.m4a', 'from_aac_48000.wav'],
+    ['source_44100_16_44137.wav', 'from_wav_44100.m4a', 'from_aac_44100.flac'],
+    ['source_48000_24_48037.wav', 'from_24bit.m4a', 'decoded_24bit_aac.wav']
+  ]) {
+    if (byName.has(encoded) || byName.has(decoded)) checkAac(source, encoded, decoded);
+  }
+  for (const name of byName.keys()) {
+    const tail = /^aac_tail_(44100|48000)_(16|24)_(\d+)\.m4a$/.exec(name);
+    if (tail) checkAac(`source_${tail[1]}_${tail[2]}_${tail[3]}.wav`, name, name.replace(/\.m4a$/, '.wav'));
+  }
+  const failures = results.filter(item => !item.valid).length + comparisons.filter(item => !item.pcmBitExact).length +
+    aacChecks.filter(item => !item.tailPreserved || !item.primingTrimmed).length;
+  console.log(JSON.stringify({ results, losslessComparisons: comparisons, aacChecks, failures }, null, 2));
   if (!results.length || failures) process.exitCode = 1;
 })().catch(error => { console.error(error); process.exitCode = 1; });
