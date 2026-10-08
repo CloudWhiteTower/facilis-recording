@@ -1,0 +1,29 @@
+# Facilis Recording 3.0.0
+
+v3 优化连续波形、资料库批量操作、录音故障恢复、播放控制和音频转换。最低兼容 API 24，支持手机和平板，提供 ARM64 与 x86_64 原生库。版本号为 `3.0.0 / 3000000`，包名保持 `com.example.harmonyrecorder`。
+
+## 更新内容
+
+- 波形曲线、渐变、边框路径和资料库分组缓存，减少逐帧和重复页面更新的工作量。
+- PCM 队列合并写入；WAV 定期更新文件头，暂停时保存检查点；采集停滞时尝试保存可用部分。
+- 转换缓冲区复用、完整 AAC 帧直接提交和编解码批次调度，保留无损精度与末尾样点。
+- 转换进度不倒退、重复进度不刷新，FLAC 编码等待能响应取消。
+- 批量删除/恢复之间允许界面响应，同时保护期间新录音的索引。
+- 播放/暂停超时恢复与界面回调异常隔离，避免按钮持续失效。
+
+具体实现、测试数量和设备范围见 [v3 优化与验证](../../docs/V3_OPTIMIZATION.md)。
+
+## 附件
+
+[GitHub Release](https://github.com/CloudWhiteTower/facilis-recording/releases/tag/v3.0.0) 提供：
+
+| 附件 | 用途 |
+| --- | --- |
+| `facilis-recording-v3.0.0-release-unsigned.hap` | 未签名 Release 模块，需要开发者自己的证书与 Profile 签名后安装 |
+| `facilis-recording-v3.0.0-release-unsigned-app.zip` | 内含完整未签名 `.app`，供后续签名、分发使用 |
+| `facilis-recording-v3.0.0-source.zip` | 与发布标签一致的源码、测试和文档 |
+| `SHA256SUMS.txt` | 上述三个附件的 SHA-256 校验值 |
+
+公开包不包含本地调试证书、设备 Profile 或用户录音。未签名 HAP 不能直接点击安装；GitHub 发布不代表已经上架 AppGallery。覆盖升级需兼容签名，应先导出重要录音，勿以卸载旧应用解决签名冲突。
+
+转换范围仍为 44.1/48 kHz 单声道，FLAC 输出 16 bit。AAC 为有损编码，转换不能恢复此前损失的信息；24-bit 输入不会被静默降为 16-bit FLAC。API 26 材质、锁屏策略、功耗与主观听感的验收范围详见验证文档。

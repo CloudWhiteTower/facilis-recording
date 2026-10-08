@@ -24,7 +24,8 @@ function subject(page, methods, repository = {}, navigation = {}) {
   }).outputText;
   const Subject = new Function('RecordingRepository', 'RecordingBatchAction', 'HarmonyTokens',
     'MotionTheme', 'NavigationStore', 'AppPage', '$r', output + '\nreturn Subject;')(
-    { getUnreadableCount: () => 0, ...repository }, actions, tokens, { content: () => ({}) }, navigation, { RECORDINGS: 'recordings' },
+    { getUnreadableCount: () => 0, applyBatchAsync: async (...args) => repository.applyBatch(...args),
+      ...repository }, actions, tokens, { content: () => ({}) }, navigation, { RECORDINGS: 'recordings' },
     name => ({ resource: name }));
   const item = Object.assign(new Subject(), { isWorking: false, isConfirming: false, isVisible: true,
     isSelecting: false, selectedRecordingIds: [], status: '', recordings: [], recentlyDeleted: [],
@@ -169,14 +170,14 @@ async function test(name, body) {
     assert.equal(page.isWorking, false);
     assert.equal(page.isConfirming, false);
   });
-  await test('library keeps failed selection and prunes confirmed successes even if refresh fails', () => {
+  await test('library keeps failed selection and prunes confirmed successes even if refresh fails', async () => {
     const page = subject('RecordingsPage', libraryMethods, {
       applyBatch: () => ({ completedIds: ['a'], failedIds: ['b'] }),
       list: () => { throw new Error('read unavailable'); }
     });
     page.showingTrash = true;
     page.recentlyDeleted = [recording('a'), recording('b')];
-    page.runBatch(page.recentlyDeleted, actions.PERMANENTLY_DELETE);
+    await page.runBatch(page.recentlyDeleted, actions.PERMANENTLY_DELETE);
     assert.deepEqual(page.recentlyDeleted.map(x => x.id), ['b']);
     assert.deepEqual(page.selectedRecordingIds, ['b']);
     assert.equal(page.isSelecting, true);
@@ -193,14 +194,14 @@ async function test(name, body) {
     assert.equal(page.isConfirming, false);
     assert.equal(page.status, '无法打开确认窗口');
   });
-  await test('library does not claim a failed item remains selected when it is no longer listed', () => {
+  await test('library does not claim a failed item remains selected when it is no longer listed', async () => {
     const page = subject('RecordingsPage', libraryMethods, {
       applyBatch: () => ({ completedIds: [], failedIds: ['a'] }),
       list: () => [], listRecentlyDeleted: () => []
     });
     page.showingTrash = true;
     page.recentlyDeleted = [recording('a')];
-    page.runBatch(page.recentlyDeleted, actions.PERMANENTLY_DELETE);
+    await page.runBatch(page.recentlyDeleted, actions.PERMANENTLY_DELETE);
     assert.equal(page.selectedRecordingIds.length, 0);
     assert.match(page.status, /失败 1 段/);
     assert.doesNotMatch(page.status, /已保留选择/);
@@ -240,6 +241,18 @@ async function test(name, body) {
       assert.equal(page.navigationMenu().length, 2);
       assert.ok(page.navigationMenu().every(item => item.content.isEnabled === true));
     }
+  });
+  await test('library stays locked throughout an asynchronous batch and ignores repeated clicks', async () => {
+    const answer = deferred(); let calls = 0;
+    const page = subject('RecordingsPage', libraryMethods, {
+      applyBatchAsync: () => { calls++; return answer.promise; }, list: () => [], listRecentlyDeleted: () => []
+    });
+    const pending = page.runBatch([recording('a')], actions.MOVE_TO_TRASH);
+    assert.equal(page.isWorking, true);
+    await page.runBatch([recording('a')], actions.MOVE_TO_TRASH);
+    assert.equal(calls, 1);
+    answer.resolve({ completedIds: ['a'], failedIds: [] }); await pending;
+    assert.equal(page.isWorking, false);
   });
   console.log(`Recording action checks: ${passed} passed, ${failed} failed. Native rendering remains separate.`);
   process.exitCode = failed ? 1 : 0;

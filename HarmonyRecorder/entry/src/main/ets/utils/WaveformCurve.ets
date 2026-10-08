@@ -63,3 +63,37 @@ export class WaveformCurve {
     };
   }
 }
+
+// Scrolling translates x only. Recompute dB mapping and interpolation when
+// measured history/geometry changes, rather than allocating curves every VSync.
+export class WaveformGeometry {
+  private source: number[] | undefined = undefined;
+  private width: number = -1;
+  private height: number = -1;
+  private floor: number = 0;
+  private ceiling: number = 0;
+  private cachedPoints: WavePoint[] = [];
+  private cachedSegments: WaveSegment[] = [];
+
+  get points(): WavePoint[] { return this.cachedPoints; }
+  get segments(): WaveSegment[] { return this.cachedSegments; }
+
+  update(values: number[], width: number, height: number, floor: number, ceiling: number): void {
+    if (this.source === values && this.width === width && this.height === height &&
+      this.floor === floor && this.ceiling === ceiling) { return; }
+    this.source = values;
+    this.width = width;
+    this.height = height;
+    this.floor = floor;
+    this.ceiling = ceiling;
+    this.cachedPoints = WaveformCurve.points(values, width, height, 1, floor, ceiling);
+    this.cachedSegments = WaveformCurve.segments(this.cachedPoints);
+  }
+
+  scrollOffset(phase: number): number {
+    const count = this.cachedPoints.length;
+    const width = Number.isFinite(this.width) ? Math.max(0, this.width - 6) : 0;
+    return width / Math.max(1, count - 1) *
+      (1 - Math.max(0, Math.min(1, Number.isFinite(phase) ? phase : 1)));
+  }
+}

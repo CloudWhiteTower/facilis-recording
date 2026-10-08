@@ -53,7 +53,8 @@ class FlacSession : public NativePcmWriter {
 public:
     std::mutex mutex;
 
-    explicit FlacSession(int32_t sampleRate) : sampleRate_(sampleRate) {}
+    explicit FlacSession(int32_t sampleRate, std::function<void()> checkCancelled = {}) :
+        sampleRate_(sampleRate), checkCancelled_(std::move(checkCancelled)) {}
     ~FlacSession() { Close(); }
 
     void Open(int32_t fd)
@@ -84,25 +85,29 @@ public:
         pending_.reserve(FRAME_BYTES);
     }
 
-    void Write(const std::vector<uint8_t> &pcm)
+    using NativePcmWriter::Write;
+    void Write(const uint8_t *pcm, size_t size) override
     {
         EnsureWritable();
+        Require(size % BYTES_PER_SAMPLE == 0, "FLAC input ends in a partial PCM sample");
+        if (size == 0) { return; }
+        Require(pcm != nullptr, "FLAC input has no data address");
         size_t offset = 0;
         // Keep at most one partial frame between calls. Never pad or discard source samples.
         if (!pending_.empty()) {
-            const size_t count = std::min(FRAME_BYTES - pending_.size(), pcm.size());
-            pending_.insert(pending_.end(), pcm.begin(), pcm.begin() + count);
+            const size_t count = std::min(FRAME_BYTES - pending_.size(), size);
+            pending_.insert(pending_.end(), pcm, pcm + count);
             offset = count;
             if (pending_.size() == FRAME_BYTES) {
                 Push(pending_.data(), pending_.size(), false);
                 pending_.clear();
             }
         }
-        while (pcm.size() - offset >= FRAME_BYTES) {
-            Push(pcm.data() + offset, FRAME_BYTES, false);
+        while (size - offset >= FRAME_BYTES) {
+            Push(pcm + offset, FRAME_BYTES, false);
             offset += FRAME_BYTES;
         }
-        pending_.insert(pending_.end(), pcm.begin() + offset, pcm.end());
+        pending_.insert(pending_.end(), pcm + offset, pcm + size);
         Drain(false);
     }
 
@@ -169,6 +174,7 @@ private:
     uint32_t maximumFrameBytes_ = 0;
     std::vector<uint8_t> pending_;
     std::string failure_;
+    std::function<void()> checkCancelled_;
 
     void EnsureWritable()
     {
@@ -247,6 +253,7 @@ private:
         const auto deadline = Clock::now() + CODEC_TIMEOUT;
         uint32_t index = 0;
         for (;;) {
+            if (checkCancelled_) { checkCancelled_(); }
             const auto result = OH_AudioCodec_QueryInputBuffer(codec_, &index, QUERY_TIMEOUT_US);
             if (result == AV_ERR_OK) {
                 break;
@@ -278,6 +285,7 @@ private:
     {
         auto deadline = Clock::now() + CODEC_TIMEOUT;
         while (!outputEos_) {
+            if (checkCancelled_) { checkCancelled_(); }
             Require(Clock::now() < deadline, "FLAC encoder output timed out");
             uint32_t index = 0;
             const auto result = OH_AudioCodec_QueryOutputBuffer(codec_, &index, untilEos ? QUERY_TIMEOUT_US : 0);
@@ -536,9 +544,10 @@ napi_value Init(napi_env env, napi_value exports)
 napi_module module = {1, 0, nullptr, Init, "facilis_flac", nullptr, {0}};
 } // namespace
 
-std::unique_ptr<NativePcmWriter> CreateFlacPcm16Writer(int32_t fd, int32_t sampleRate)
+std::unique_ptr<NativePcmWriter> CreateFlacPcm16Writer(int32_t fd, int32_t sampleRate,
+    std::function<void()> checkCancelled)
 {
-    auto session = std::make_unique<FlacSession>(sampleRate);
+    auto session = std::make_unique<FlacSession>(sampleRate, std::move(checkCancelled));
     session->Open(fd);
     return session;
 }

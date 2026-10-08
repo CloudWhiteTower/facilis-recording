@@ -16,6 +16,7 @@ let asyncEof = false;
 let pickerAnswer = () => [];
 let passed = 0;
 let failed = 0;
+let scans = 0;
 function before(operation, source, target = '') {
   if (fault(operation, source.replaceAll('\\', '/'), target.replaceAll('\\', '/'))) {
     throw new Error('Injected ' + operation + ' failure');
@@ -27,7 +28,7 @@ const fileIo = {
   accessSync: p => { before('access', p); return fs.existsSync(p); },
   statSync: p => { before('stat', p); return fs.statSync(p); },
   mkdirSync: (p, recursive) => { before('mkdir', p); return fs.mkdirSync(p, { recursive }); },
-  listFileSync: p => { before('list', p); return fs.readdirSync(p); },
+  listFileSync: p => { before('list', p); scans++; return fs.readdirSync(p); },
   readTextSync: p => { before('readText', p); return fs.readFileSync(p, 'utf8'); },
   openSync: (p, flags) => {
     before('open', p);
@@ -250,6 +251,15 @@ try {
     assert.equal(repository.list(ctx)[0].id, 'first.wav');
     assert.equal(repository.listRecentlyDeleted(ctx)[0].id, 'second.wav');
   });
+  test('a successful large batch scans each library directory only once', () => {
+    const ctx = context(), items = [];
+    for (let index = 0; index < 40; index++) items.push(create(ctx, `item-${index}.wav`));
+    const beforeScans = scans;
+    const result = repository.applyBatch(ctx, items, action.MOVE_TO_TRASH);
+    assert.equal(result.completedIds.length, 40); assert.equal(result.failedIds.length, 0);
+    assert.equal(scans - beforeScans, 2);
+    assert.equal(repository.list(ctx).length, 0); assert.equal(repository.listRecentlyDeleted(ctx).length, 40);
+  });
   test('batch restore retains only failed trash entries and supports retry', () => {
     const ctx = context();
     const first = repository.moveToRecentlyDeleted(ctx, create(ctx, 'first.wav'));
@@ -431,6 +441,35 @@ try {
     const imported = repository.importCompletedFile(ctx, cached, RecordingConfig.wav(), 'converted');
     assert.equal(imported.config.sampleRate, 44100); assert.equal(imported.config.bitDepth, 24);
     assert.equal(fs.existsSync(cached), false); assert.equal(repository.list(ctx).length, 2);
+  });
+  await asyncTest('yielding a batch does not overwrite a recording saved between its transactions', async () => {
+    const ctx = context(), first = create(ctx, 'first.wav'), second = create(ctx, 'second.wav');
+    const yieldOriginal = repository.yieldToUI;
+    let yields = 0, added;
+    repository.yieldToUI = async () => {
+      if (++yields === 2) added = create(ctx, 'added-during-batch.wav');
+    };
+    try {
+      const result = await repository.applyBatchAsync(ctx, [first, second], action.MOVE_TO_TRASH);
+      assert.deepEqual(result.completedIds, [first.id, second.id]);
+      assert.deepEqual(repository.list(ctx).map(item => item.id), [added.id]);
+      assert.equal(repository.listRecentlyDeleted(ctx).length, 2); assert.equal(yields, 3);
+    } finally { repository.yieldToUI = yieldOriginal; }
+  });
+  await asyncTest('a failed refresh during an asynchronous batch retains its exact committed successes', async () => {
+    const ctx = context(), first = create(ctx, 'first.wav'), second = create(ctx, 'second.wav'), third = create(ctx, 'third.wav');
+    const yieldOriginal = repository.yieldToUI;
+    let yields = 0;
+    repository.yieldToUI = async () => {
+      if (++yields === 2) fault = (op, p) => (op === 'rename' && p === second.filePath) || op === 'list';
+    };
+    try {
+      const result = await repository.applyBatchAsync(ctx, [first, second, third], action.MOVE_TO_TRASH);
+      assert.deepEqual(result.completedIds, [first.id]);
+      assert.deepEqual(result.failedIds, [second.id, third.id]);
+      fault = () => false;
+      assert.equal(repository.list(ctx).length, 2); assert.equal(repository.listRecentlyDeleted(ctx).length, 1);
+    } finally { repository.yieldToUI = yieldOriginal; fault = () => false; }
   });
   await asyncTest('PCM export copies only data chunk bytes and excludes pad and LIST metadata', async () => {
     const ctx = context(); create(ctx);

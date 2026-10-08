@@ -1,6 +1,6 @@
 # Facilis Recording
 
-一款简洁、离线优先的 HarmonyOS 原生录音应用。它使用 ArkTS、ArkUI 与系统音频接口实现 WAV、AAC/M4A 和 FLAC 录制、实时波形、本地管理、播放与格式转换。当前版本为 **v2.0.0**，面向 HarmonyOS SDK 6.1.1（API 24）的手机和平板。
+一款简洁、纯离线的 HarmonyOS 原生录音应用。它使用 ArkTS、ArkUI 与系统音频接口实现 WAV、AAC/M4A 和 FLAC 录制、实时波形、本地管理、播放与格式转换。当前版本为 **v3.0.0**，面向 HarmonyOS SDK 6.1.1（API 24）的手机和平板。
 
 > `facilis` 是拉丁语形容词，意为“容易的、简便的”。这里将它作为品牌词与英文 `Recording` 组合；仓库名采用适合 URL 的 `facilis-recording`。
 
@@ -60,10 +60,10 @@ devecocli build --product default --build-mode release
 
 ## 下载与发布状态
 
-- [v2.0.0 GitHub Release](https://github.com/CloudWhiteTower/facilis-recording/releases/tag/v2.0.0) 提供未签名 Release HAP、ZIP 封装的未签名 Release APP、源码归档及 SHA-256 校验文件，详见[附件说明](release/v2.0.0/README.md)。
+- [v3.0.0 GitHub Release](https://github.com/CloudWhiteTower/facilis-recording/releases/tag/v3.0.0) 提供未签名 Release HAP、ZIP 封装的未签名 Release APP、源码归档及 SHA-256 校验文件，详见[附件说明](release/v3.0.0/README.md)。
 - **公开 HAP 需由开发者签名后安装**。附件不包含本地调试证书或设备 Profile；GitHub 发布不代表已通过 AppGallery 审核或上架。
-- 最新功能回归：Host 166/166、API 24 平板模拟器测试 67/67；15 个音频文件独立解码通过，5 组 PCM 逐样点一致，系统文件选择器保存副本与原件哈希一致。具体范围见[音频验证记录](data/audio-functional-validation/README.md)。
-- 实体设备听感、锁屏策略、功耗及长时间转换仍待验证。此前完成的 30:57.62 WAV 模拟器实录与本轮复检分别记录，未将加速测试计作实体设备长录音。
+- v3 Host 回归 178/178，覆盖录音、转换、播放、文件操作和波形模型。当前设备与独立解码结果见 [v3 验证](docs/V3_OPTIMIZATION.md)；v2 的模拟器验证保留在[历史音频记录](data/audio-functional-validation/README.md)。
+- HiSmartPerf 帧时间、功耗、锁屏策略和扬声器/耳机主观听感仍待专门验收；加速测试不计作真实设备长录音。
 
 正式上架还需要开发者本人完成账号实名、APP ID/最终包名确认、发布签名、版权/备案材料和 AGC 提交。逐项状态见 [AppGallery 发布清单](docs/APPGALLERY_RELEASE.md)。
 
@@ -72,6 +72,7 @@ devecocli build --product default --build-mode release
 - [应用工程说明](HarmonyRecorder/README.md)
 - [文档索引](docs/README.md)
 - [录音、文件与转换链路](docs/AUDIO_PIPELINE.md)
+- [v3 全应用优化与验证](docs/V3_OPTIMIZATION.md)
 - [v2 界面与兼容说明](docs/V2_IMPLEMENTATION.md)
 - [动画与交互优化](docs/MOTION_IMPLEMENTATION.md)
 - [按压光感、文件管理、平板与录音增强](docs/RECORDING_ENHANCEMENTS.md)

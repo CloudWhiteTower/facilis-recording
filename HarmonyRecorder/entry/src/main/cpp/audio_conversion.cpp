@@ -30,7 +30,8 @@ using Buffer = std::unique_ptr<OH_AVBuffer, decltype(&OH_AVBuffer_Destroy)>;
 using Clock = std::chrono::steady_clock;
 constexpr int64_t WAIT_US = 20000;
 constexpr auto STALL_LIMIT = std::chrono::seconds(5);
-constexpr size_t CHUNK_SAMPLES = 4608;
+constexpr size_t CHUNK_SAMPLES = 32768;
+constexpr size_t CODEC_BATCH_FRAMES = 8;
 
 void Need(bool value, const char *message)
 {
@@ -111,12 +112,12 @@ struct Conversion {
 class WavWriter final : public NativePcmWriter {
 public:
     WavWriter(int fd, int rate, int depth) : fd_(fd), rate_(rate), depth_(depth) {}
-    void Write(const std::vector<uint8_t> &pcm) override
+    void Write(const uint8_t *pcm, size_t size) override
     {
-        Need(pcm.size() % (depth_ / 8) == 0, "WAV output must contain complete PCM samples");
-        Need(bytes_ + pcm.size() <= 0xfffffffeULL - 36, "WAV output exceeds the RIFF 4 GiB limit");
-        WriteAt(fd_, pcm.data(), pcm.size(), static_cast<int64_t>(44 + bytes_));
-        bytes_ += pcm.size();
+        Need(size % (depth_ / 8) == 0, "WAV output must contain complete PCM samples");
+        Need(bytes_ + size <= 0xfffffffeULL - 36, "WAV output exceeds the RIFF 4 GiB limit");
+        WriteAt(fd_, pcm, size, static_cast<int64_t>(44 + bytes_));
+        bytes_ += size;
     }
     void Finish() override
     {
@@ -169,15 +170,25 @@ public:
         } catch (...) { Close(); throw; }
     }
     ~AacWriter() override { Close(); }
-    void Write(const std::vector<uint8_t> &pcm) override
+    void Write(const uint8_t *pcm, size_t size) override
     {
+        Need(size % (floatInput_ ? 4 : 2) == 0, "AAC input ends in a partial PCM sample");
+        if (size == 0) { return; }
+        Need(pcm != nullptr, "AAC input has no data address");
         size_t offset = 0;
-        while (offset < pcm.size()) {
-            const auto count = std::min(frameBytes_ - pending_.size(), pcm.size() - offset);
-            pending_.insert(pending_.end(), pcm.begin() + offset, pcm.begin() + offset + count);
+        if (!pending_.empty()) {
+            const auto count = std::min(frameBytes_ - pending_.size(), size);
+            pending_.insert(pending_.end(), pcm, pcm + count);
             offset += count;
             if (pending_.size() == frameBytes_) { Push(pending_.data(), pending_.size(), false); pending_.clear(); }
         }
+        // Full frames can go straight into the codec. Only the incomplete tail
+        // needs an owned copy that survives the caller's buffer lifetime.
+        while (size - offset >= frameBytes_) {
+            Push(pcm + offset, frameBytes_, false);
+            offset += frameBytes_;
+        }
+        pending_.insert(pending_.end(), pcm + offset, pcm + size);
     }
     void Finish() override
     {
@@ -306,13 +317,16 @@ private:
 
 std::unique_ptr<NativePcmWriter> MakeWriter(Conversion &job, bool floatInput)
 {
-    if (job.target == "flac") { return CreateFlacPcm16Writer(job.output, job.rate); }
+    if (job.target == "flac") {
+        return CreateFlacPcm16Writer(job.output, job.rate, [&job]() { job.CheckCancelled(); });
+    }
     if (job.target == "wav") { return std::make_unique<WavWriter>(job.output, job.rate, job.targetDepth); }
     return std::make_unique<AacWriter>(job, floatInput);
 }
 
 // Convert only the storage representation. Sample rate/channel layout never change.
-std::vector<uint8_t> Repack(const uint8_t *input, size_t bytes, int sourceFormat, int targetFormat)
+void Repack(const uint8_t *input, size_t bytes, int sourceFormat, int targetFormat,
+    std::vector<uint8_t> &output)
 {
     const auto width = [](int format) -> size_t {
         if (format == SAMPLE_S16LE) { return 2; }
@@ -323,8 +337,7 @@ std::vector<uint8_t> Repack(const uint8_t *input, size_t bytes, int sourceFormat
     const size_t inputWidth = width(sourceFormat);
     const size_t outputWidth = width(targetFormat);
     Need(bytes % inputWidth == 0, "Decoded audio ends in a partial PCM sample");
-    if (sourceFormat == targetFormat) { return std::vector<uint8_t>(input, input + bytes); }
-    std::vector<uint8_t> output(bytes / inputWidth * outputWidth);
+    output.resize(bytes / inputWidth * outputWidth);
     for (size_t i = 0; i < bytes / inputWidth; ++i) {
         double value;
         if (sourceFormat == SAMPLE_F32LE) {
@@ -350,7 +363,14 @@ std::vector<uint8_t> Repack(const uint8_t *input, size_t bytes, int sourceFormat
             PutLe(output.data() + i * outputWidth, static_cast<uint32_t>(sample), outputWidth);
         }
     }
-    return output;
+}
+
+void WritePcm(NativePcmWriter &writer, const uint8_t *input, size_t bytes, int sourceFormat,
+    int targetFormat, std::vector<uint8_t> &scratch)
+{
+    if (sourceFormat == targetFormat) { writer.Write(input, bytes); return; }
+    Repack(input, bytes, sourceFormat, targetFormat, scratch);
+    writer.Write(scratch);
 }
 
 void ConvertWav(Conversion &job)
@@ -397,12 +417,13 @@ void ConvertWav(Conversion &job)
         (job.target != "m4a" && job.targetDepth == 24 ? SAMPLE_S24LE : SAMPLE_S16LE);
     auto writer = MakeWriter(job, targetFormat == SAMPLE_F32LE);
     std::vector<uint8_t> input(CHUNK_SAMPLES * (depth / 8));
+    std::vector<uint8_t> scratch;
     uint64_t done = 0;
     while (done < dataSize) {
         job.CheckCancelled();
         const size_t count = static_cast<size_t>(std::min<uint64_t>(input.size(), dataSize - done));
         ReadAt(job.input, input.data(), count, dataOffset + static_cast<int64_t>(done));
-        writer->Write(Repack(input.data(), count, sourceFormat, targetFormat));
+        WritePcm(*writer, input.data(), count, sourceFormat, targetFormat, scratch);
         done += count;
         job.samples += count / (depth / 8);
         job.progress.store(0.97 * static_cast<double>(done) / dataSize);
@@ -472,52 +493,19 @@ public:
             job_.CheckCancelled();
             Need(Clock::now() < deadline, "Audio decoding stalled");
             bool moved = false;
-            if (!inputEos) {
-                uint32_t index = 0;
-                const auto result = OH_AudioCodec_QueryInputBuffer(codec_, &index, WAIT_US);
-                if (result == AV_ERR_OK) {
-                    auto *buffer = OH_AudioCodec_GetInputBuffer(codec_, index);
-                    Need(buffer != nullptr, "Decoder input buffer is unavailable");
-                    // Demux into an owned buffer, then explicitly submit attributes
-                    // to the codec-managed input. Never inherit its recycled EOS/size.
-                    OH_AVCodecBufferAttr attr{};
-                    Check(OH_AVBuffer_SetBufferAttr(demuxBuffer.get(), &attr), "Reset demuxer attributes");
-                    Check(OH_AVDemuxer_ReadSampleBuffer(demuxer_, track_, demuxBuffer.get()), "Read encoded audio frame");
-                    Check(OH_AVBuffer_GetBufferAttr(demuxBuffer.get(), &attr), "Read demuxer frame attributes");
-                    inputEos = (attr.flags & AVCODEC_BUFFER_FLAGS_EOS) != 0;
-                    if (inputEos) { attr.size = 0; attr.offset = 0; attr.flags = AVCODEC_BUFFER_FLAGS_EOS; }
-                    else {
-                        Need(attr.size > 0 && attr.offset >= 0 && static_cast<int64_t>(attr.offset) + attr.size <=
-                            OH_AVBuffer_GetCapacity(demuxBuffer.get()), "Demuxer produced invalid sample bounds");
-                        Need(attr.size <= OH_AVBuffer_GetCapacity(buffer), "Encoded frame exceeds decoder input capacity");
-                        const auto *from = OH_AVBuffer_GetAddr(demuxBuffer.get());
-                        auto *to = OH_AVBuffer_GetAddr(buffer);
-                        Need(from && to, "Audio sample buffer has no address");
-                        std::memcpy(to, from + attr.offset, static_cast<size_t>(attr.size));
-                        attr.offset = 0;
-                        ++inputFrames_;
-                    }
-                    Format parameters(OH_AVBuffer_GetParameter(demuxBuffer.get()), OH_AVFormat_Destroy);
-                    if (parameters) { Check(OH_AVBuffer_SetParameter(buffer, parameters.get()), "Copy demuxer sample metadata"); }
-                    Check(OH_AVBuffer_SetBufferAttr(buffer, &attr), "Set decoder input attributes");
-                    Check(OH_AudioCodec_PushInputBuffer(codec_, index), "Push encoded audio frame");
-                    moved = attr.size > 0;
-                    if (durationUs_ > 0 && !inputEos) {
-                        const double progress = std::min(0.97, std::max(0.0, static_cast<double>(attr.pts) / durationUs_ * 0.97));
-                        job_.progress.store(std::max(job_.progress.load(), progress));
-                    }
-                } else { Check(result == AV_ERR_TRY_AGAIN_LATER ? AV_ERR_OK : result, "Query decoder input"); }
+            // Keep the codec fed and drain all immediately available output.
+            // Blocking once per compressed frame unnecessarily serializes a
+            // file conversion around the decoder's scheduling latency.
+            for (size_t frame = 0; frame < CODEC_BATCH_FRAMES && !inputEos; ++frame) {
+                if (!SupplyInput(demuxBuffer.get(), inputEos)) { break; }
+                moved = true;
             }
-            uint32_t index = 0;
-            const auto result = OH_AudioCodec_QueryOutputBuffer(codec_, &index, WAIT_US);
-            if (result == AV_ERR_STREAM_CHANGED) { ReadOutputFormat(); }
-            else if (result == AV_ERR_OK) {
-                const auto previousSamples = job_.samples;
-                try { outputEos = Consume(index); }
-                catch (...) { OH_AudioCodec_FreeOutputBuffer(codec_, index); throw; }
-                Check(OH_AudioCodec_FreeOutputBuffer(codec_, index), "Release decoded PCM");
-                moved = moved || job_.samples > previousSamples;
-            } else { Check(result == AV_ERR_TRY_AGAIN_LATER ? AV_ERR_OK : result, "Query decoder output"); }
+            for (size_t frame = 0; frame < CODEC_BATCH_FRAMES && !outputEos; ++frame) {
+                if (!DrainOutput(0, outputEos, moved)) { break; }
+            }
+            // When neither end progresses, block briefly instead of busy
+            // spinning; cancellation and the five-second stall limit remain.
+            if (!moved && !outputEos) { DrainOutput(WAIT_US, outputEos, moved); }
             if (moved) { deadline = Clock::now() + STALL_LIMIT; }
             Need(Clock::now() < deadline, "Audio decoding stalled");
         }
@@ -543,6 +531,62 @@ private:
     int32_t lastOutputSize_ = 0;
     uint32_t lastOutputFlags_ = 0;
     std::unique_ptr<NativePcmWriter> writer_;
+    std::vector<uint8_t> pcmScratch_;
+    bool SupplyInput(OH_AVBuffer *demuxBuffer, bool &inputEos)
+    {
+        job_.CheckCancelled();
+        uint32_t index = 0;
+        const auto result = OH_AudioCodec_QueryInputBuffer(codec_, &index, 0);
+        if (result == AV_ERR_TRY_AGAIN_LATER) { return false; }
+        Check(result, "Query decoder input");
+        auto *buffer = OH_AudioCodec_GetInputBuffer(codec_, index);
+        Need(buffer != nullptr, "Decoder input buffer is unavailable");
+        OH_AVCodecBufferAttr attr{};
+        Check(OH_AVBuffer_SetBufferAttr(demuxBuffer, &attr), "Reset demuxer attributes");
+        Check(OH_AVDemuxer_ReadSampleBuffer(demuxer_, track_, demuxBuffer), "Read encoded audio frame");
+        Check(OH_AVBuffer_GetBufferAttr(demuxBuffer, &attr), "Read demuxer frame attributes");
+        inputEos = (attr.flags & AVCODEC_BUFFER_FLAGS_EOS) != 0;
+        if (inputEos) { attr.size = 0; attr.offset = 0; attr.flags = AVCODEC_BUFFER_FLAGS_EOS; }
+        else {
+            Need(attr.size > 0 && attr.offset >= 0 && static_cast<int64_t>(attr.offset) + attr.size <=
+                OH_AVBuffer_GetCapacity(demuxBuffer), "Demuxer produced invalid sample bounds");
+            Need(attr.size <= OH_AVBuffer_GetCapacity(buffer), "Encoded frame exceeds decoder input capacity");
+            const auto *from = OH_AVBuffer_GetAddr(demuxBuffer);
+            auto *to = OH_AVBuffer_GetAddr(buffer);
+            Need(from && to, "Audio sample buffer has no address");
+            std::memcpy(to, from + attr.offset, static_cast<size_t>(attr.size));
+            attr.offset = 0;
+            ++inputFrames_;
+        }
+        // Preserve sample metadata, including AAC priming information.
+        Format parameters(OH_AVBuffer_GetParameter(demuxBuffer), OH_AVFormat_Destroy);
+        if (parameters) { Check(OH_AVBuffer_SetParameter(buffer, parameters.get()), "Copy demuxer sample metadata"); }
+        Check(OH_AVBuffer_SetBufferAttr(buffer, &attr), "Set decoder input attributes");
+        Check(OH_AudioCodec_PushInputBuffer(codec_, index), "Push encoded audio frame");
+        return true;
+    }
+    bool DrainOutput(int64_t waitUs, bool &outputEos, bool &moved)
+    {
+        job_.CheckCancelled();
+        uint32_t index = 0;
+        const auto result = OH_AudioCodec_QueryOutputBuffer(codec_, &index, waitUs);
+        if (result == AV_ERR_TRY_AGAIN_LATER) { return false; }
+        if (result == AV_ERR_STREAM_CHANGED) { ReadOutputFormat(); return true; }
+        Check(result, "Query decoder output");
+        const auto previousSamples = job_.samples;
+        try { outputEos = Consume(index); }
+        catch (...) { OH_AudioCodec_FreeOutputBuffer(codec_, index); throw; }
+        Check(OH_AudioCodec_FreeOutputBuffer(codec_, index), "Release decoded PCM");
+        moved = moved || outputEos || job_.samples > previousSamples;
+        // Report PCM actually consumed rather than compressed frames merely
+        // queued: the progress bar follows work completed by the whole pipeline.
+        if (durationUs_ > 0) {
+            const double progress = std::min(0.97, static_cast<double>(job_.samples) * 1000000.0 /
+                (static_cast<double>(job_.rate) * durationUs_) * 0.97);
+            job_.progress.store(std::max(job_.progress.load(), progress));
+        }
+        return true;
+    }
     void CheckFlacDepth()
     {
         uint8_t info[42];
@@ -583,7 +627,7 @@ private:
         auto *data = OH_AVBuffer_GetAddr(buffer);
         Need(data != nullptr, "Decoded PCM has no data address");
         const int outputFormat = job_.targetDepth == 24 && job_.target != "m4a" ? SAMPLE_S24LE : pcmFormat_;
-        writer_->Write(Repack(data + attr.offset, static_cast<size_t>(attr.size), pcmFormat_, outputFormat));
+        WritePcm(*writer_, data + attr.offset, static_cast<size_t>(attr.size), pcmFormat_, outputFormat, pcmScratch_);
         job_.samples += static_cast<uint64_t>(attr.size) / (pcmFormat_ == SAMPLE_S16LE ? 2 : 4);
         return false;
     }

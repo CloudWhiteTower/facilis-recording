@@ -27,6 +27,18 @@ export class RecordingFileMetadata {
   }
 }
 
+class RecordingLibrarySnapshot {
+  active: RecordingInfo[];
+  trash: RecordingInfo[];
+  revision: number;
+
+  constructor(active: RecordingInfo[], trash: RecordingInfo[], revision: number) {
+    this.active = active;
+    this.trash = trash;
+    this.revision = revision;
+  }
+}
+
 export class RecordingRepository {
   private static readonly RECORDINGS_DIRECTORY: string = 'recordings';
   private static readonly RECENTLY_DELETED_DIRECTORY: string = 'recently_deleted';
@@ -36,6 +48,7 @@ export class RecordingRepository {
   private static readonly TRANSACTION_FILE: string = 'recordings.transaction';
   private static readonly reservedPaths: Set<string> = new Set<string>();
   private static readonly unreadableCounts: Map<string, number> = new Map<string, number>();
+  private static revision: number = 0;
 
   static createNewRecording(context: common.Context, config: RecordingConfig): RecordingInfo {
     const directory = RecordingRepository.ensureRecordingsDirectory(context);
@@ -165,58 +178,77 @@ export class RecordingRepository {
   }
 
   static moveToRecentlyDeleted(context: common.Context, recording: RecordingInfo): RecordingInfo {
+    return RecordingRepository.moveWithSnapshot(context, recording, RecordingRepository.librarySnapshot(context));
+  }
+
+  private static moveWithSnapshot(context: common.Context, recording: RecordingInfo,
+    snapshot: RecordingLibrarySnapshot): RecordingInfo {
     if (recording.isInRecentlyDeleted) {
       throw new Error('The recording is already in recently deleted.');
     }
-    const recordingsDirectory = RecordingRepository.ensureRecordingsDirectory(context);
-    const recordings = RecordingRepository.list(context);
+    const recordings = snapshot.active;
     const existing = RecordingRepository.findById(recordings, recording.id);
     if (existing === undefined || existing.filePath !== recording.filePath || existing.createdAt !== recording.createdAt ||
       !RecordingRepository.isExistingFile(existing.filePath)) {
       throw new Error('The recording is no longer available.');
     }
     const recentlyDeletedDirectory = RecordingRepository.ensureRecentlyDeletedDirectory(context);
-    const recentlyDeleted = RecordingRepository.listRecentlyDeleted(context);
+    const recentlyDeleted = snapshot.trash;
     const fileName = RecordingRepository.createAvailableFileName(recentlyDeletedDirectory, existing.fileName);
     const filePath = `${recentlyDeletedDirectory}/${fileName}`;
     const moved = new RecordingInfo(fileName, filePath, existing.config, existing.durationMs, existing.createdAt,
       existing.sizeBytes, Date.now(), existing.fileName);
     const active = recordings.filter((item: RecordingInfo): boolean => item.id !== existing.id);
-    recentlyDeleted.push(moved);
-    RecordingRepository.commitTransfer(context, 'move', existing, moved, active, recentlyDeleted);
+    const trash = recentlyDeleted.concat([moved]);
+    RecordingRepository.commitTransfer(context, 'move', existing, moved, active, trash);
+    snapshot.active = active;
+    snapshot.trash = trash;
+    snapshot.revision = RecordingRepository.revision;
     return moved;
   }
 
   static restore(context: common.Context, recording: RecordingInfo): RecordingInfo {
+    return RecordingRepository.restoreWithSnapshot(context, recording, RecordingRepository.librarySnapshot(context));
+  }
+
+  private static restoreWithSnapshot(context: common.Context, recording: RecordingInfo,
+    snapshot: RecordingLibrarySnapshot): RecordingInfo {
     if (!recording.isInRecentlyDeleted) {
       throw new Error('The recording is not in recently deleted.');
     }
-    const recentlyDeletedDirectory = RecordingRepository.ensureRecentlyDeletedDirectory(context);
-    const recentlyDeleted = RecordingRepository.listRecentlyDeleted(context);
+    const recentlyDeleted = snapshot.trash;
     const existing = RecordingRepository.findById(recentlyDeleted, recording.id);
     if (existing === undefined || existing.filePath !== recording.filePath || existing.createdAt !== recording.createdAt ||
       !RecordingRepository.isExistingFile(existing.filePath)) {
       throw new Error('The deleted recording is no longer available.');
     }
     const recordingsDirectory = RecordingRepository.ensureRecordingsDirectory(context);
-    const recordings = RecordingRepository.list(context);
+    const recordings = snapshot.active;
     const preferredName = existing.originalFileName.length > 0 ? existing.originalFileName : existing.fileName;
     const fileName = RecordingRepository.createAvailableFileName(recordingsDirectory, preferredName);
     const filePath = `${recordingsDirectory}/${fileName}`;
     const restored = new RecordingInfo(fileName, filePath, existing.config, existing.durationMs, existing.createdAt,
       existing.sizeBytes);
     const remaining = recentlyDeleted.filter((item: RecordingInfo): boolean => item.id !== existing.id);
-    recordings.push(restored);
-    RecordingRepository.commitTransfer(context, 'restore', existing, restored, recordings, remaining);
+    const active = recordings.concat([restored]);
+    RecordingRepository.commitTransfer(context, 'restore', existing, restored, active, remaining);
+    snapshot.active = active;
+    snapshot.trash = remaining;
+    snapshot.revision = RecordingRepository.revision;
     return restored;
   }
 
   static permanentlyDelete(context: common.Context, recording: RecordingInfo): void {
+    RecordingRepository.deleteWithSnapshot(context, recording, RecordingRepository.librarySnapshot(context));
+  }
+
+  private static deleteWithSnapshot(context: common.Context, recording: RecordingInfo,
+    snapshot: RecordingLibrarySnapshot): void {
     if (!recording.isInRecentlyDeleted) {
       throw new Error('Only recently deleted recordings can be permanently removed.');
     }
     const directory = RecordingRepository.ensureRecentlyDeletedDirectory(context);
-    const recentlyDeleted = RecordingRepository.listRecentlyDeleted(context);
+    const recentlyDeleted = snapshot.trash;
     const existing = RecordingRepository.findById(recentlyDeleted, recording.id);
     if (existing === undefined) {
       // An unindexed file with an unreadable header can be absent from the scan but still occupy disk.
@@ -242,33 +274,77 @@ export class RecordingRepository {
       throw new Error(`Unable to permanently delete recording: ${String(error)}`);
     }
     RecordingRepository.clearTransaction(context);
+    snapshot.trash = remaining;
+    snapshot.revision = RecordingRepository.revision;
   }
 
   static applyBatch(context: common.Context, recordings: RecordingInfo[], action: RecordingBatchAction): RecordingBatchResult {
     const result = new RecordingBatchResult();
     const seen = new Set<string>();
+    let snapshot = RecordingRepository.librarySnapshot(context);
     for (const recording of recordings) {
       if (seen.has(recording.id)) {
         continue;
       }
       seen.add(recording.id);
-      try {
-        if (action === RecordingBatchAction.MOVE_TO_TRASH) {
-          RecordingRepository.moveToRecentlyDeleted(context, recording);
-        } else if (action === RecordingBatchAction.RESTORE) {
-          RecordingRepository.restore(context, recording);
-        } else if (action === RecordingBatchAction.PERMANENTLY_DELETE) {
-          RecordingRepository.permanentlyDelete(context, recording);
-        } else {
-          throw new Error('Unknown recording batch action.');
-        }
-        result.completedIds.push(recording.id);
-      } catch (error) {
-        result.failedIds.push(recording.id);
-        console.error(`Recording batch item failed: ${String(error)}`);
-      }
+      snapshot = RecordingRepository.applyBatchItem(context, recording, action, snapshot, result);
     }
     return result;
+  }
+
+  static async applyBatchAsync(context: common.Context, recordings: RecordingInfo[],
+    action: RecordingBatchAction): Promise<RecordingBatchResult> {
+    const result = new RecordingBatchResult();
+    const seen = new Set<string>();
+    // Yield before the first scan and between transactions so the busy state,
+    // native sheets and input events can render while a large batch is processed.
+    await RecordingRepository.yieldToUI();
+    let snapshot = RecordingRepository.librarySnapshot(context);
+    for (const recording of recordings) {
+      if (seen.has(recording.id)) { continue; }
+      seen.add(recording.id);
+      snapshot = RecordingRepository.applyBatchItem(context, recording, action, snapshot, result);
+      await RecordingRepository.yieldToUI();
+    }
+    return result;
+  }
+
+  private static yieldToUI(): Promise<void> {
+    return new Promise<void>((resolve: () => void): void => { setTimeout(resolve, 16); });
+  }
+
+  private static librarySnapshot(context: common.Context): RecordingLibrarySnapshot {
+    const active = RecordingRepository.list(context);
+    const trash = RecordingRepository.listRecentlyDeleted(context);
+    return new RecordingLibrarySnapshot(active, trash, RecordingRepository.revision);
+  }
+
+  private static applyBatchItem(context: common.Context, recording: RecordingInfo, action: RecordingBatchAction,
+    snapshot: RecordingLibrarySnapshot, result: RecordingBatchResult): RecordingLibrarySnapshot {
+    try {
+      if (snapshot.revision !== RecordingRepository.revision) {
+        // A recording/conversion may be saved while the batch yields, or a
+        // failed transaction may have rolled back. Catch refresh failures per
+        // item so already committed successes remain visible in the result.
+        snapshot = RecordingRepository.librarySnapshot(context);
+      }
+      if (action === RecordingBatchAction.MOVE_TO_TRASH) {
+        RecordingRepository.moveWithSnapshot(context, recording, snapshot);
+      } else if (action === RecordingBatchAction.RESTORE) {
+        RecordingRepository.restoreWithSnapshot(context, recording, snapshot);
+      } else if (action === RecordingBatchAction.PERMANENTLY_DELETE) {
+        RecordingRepository.deleteWithSnapshot(context, recording, snapshot);
+      } else {
+        throw new Error('Unknown recording batch action.');
+      }
+      result.completedIds.push(recording.id);
+    } catch (error) {
+      result.failedIds.push(recording.id);
+      console.error(`Recording batch item failed: ${String(error)}`);
+      // Rollback recovery can change indexes; invalidate before the next item.
+      snapshot.revision = -1;
+    }
+    return snapshot;
   }
 
   static discardTemporary(recording: RecordingInfo): void {
@@ -384,10 +460,11 @@ export class RecordingRepository {
 
   private static scanRecordings(directory: string, isRecentlyDeleted: boolean, knownIds: string[]): RecordingInfo[] {
     const recordings: RecordingInfo[] = [];
+    const known = new Set<string>(knownIds);
     const fileNames = fileIo.listFileSync(directory);
     for (let index = 0; index < fileNames.length; index++) {
       const fileName = fileNames[index];
-      if (knownIds.includes(fileName) || RecordingRepository.reservedPaths.has(`${directory}/${fileName}`)) {
+      if (known.has(fileName) || RecordingRepository.reservedPaths.has(`${directory}/${fileName}`)) {
         continue;
       }
       const extensionIndex = fileName.lastIndexOf('.');
@@ -524,6 +601,7 @@ export class RecordingRepository {
     });
     const content = sorted.map((item: RecordingInfo): string => RecordingRepository.serialize(item)).join('\n');
     RecordingRepository.writeTextAtomically(`${directory}/${indexFileName}`, content);
+    ++RecordingRepository.revision;
   }
 
   private static writeTextAtomically(path: string, content: string): void {

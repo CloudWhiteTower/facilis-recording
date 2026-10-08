@@ -1,6 +1,6 @@
 # Facilis Recording
 
-HarmonyOS Stage ArkTS 本地录音应用，当前版本为 **2.0.0 / 2000000**，最低兼容与目标 SDK 均为 **6.1.1（API 24）**。它支持选择质量、录制、暂停/继续、本地保存、管理、播放与格式转换。
+HarmonyOS Stage ArkTS 本地录音应用，当前版本为 **3.0.0 / 3000000**，最低兼容与目标 SDK 均为 **6.1.1（API 24）**。它支持选择质量、录制、暂停/继续、本地保存、管理、播放与格式转换。
 
 ## 当前功能
 
@@ -44,7 +44,7 @@ PlayerPage → PlaybackService → AVPlayer
 更多菜单 → AudioConversionService → Native 解码/编码 → RecordingRepository
 ```
 
-`entry/src/main/cpp/` 提供 FLAC 录制与音频转换的异步 N-API 桥。当前 Release 同时包含 arm64-v8a 和 x86_64 原生库；实际运行验证范围仍以模拟器记录为准。
+`entry/src/main/cpp/` 提供 FLAC 录制与音频转换的异步 N-API 桥。当前 Release 同时包含 arm64-v8a 和 x86_64 原生库；v3 的实际设备结果见[优化与验证](../docs/V3_OPTIMIZATION.md)。
 
 ## 构建与运行
 
@@ -74,7 +74,7 @@ devecocli emulator license accept
 devecocli emulator start 'Pura 90'
 ```
 
-公开仓库不包含签名材料。首次部署前，请在 DevEco Studio 中为自己的应用包名配置调试签名；正式发布则按 AGC 当前流程配置发布签名。[v2.0.0 附件](../release/v2.0.0/README.md)中的 HAP 与 APP 均未签名，不能直接作为已签名安装包使用。
+公开仓库不包含签名材料。首次部署前，请在 DevEco Studio 中为自己的应用包名配置调试签名；正式发布则按 AGC 当前流程配置发布签名。[v3.0.0 附件](../release/v3.0.0/README.md)中的 HAP 与 APP 均未签名，不能直接作为已签名安装包使用。
 
 ## 测试
 
@@ -98,18 +98,18 @@ node scripts/test-audio-conversion-service.cjs
 node scripts/test-playback-service.cjs '<DevEco Studio 安装目录>\tools\ohpm\node_modules\typescript\lib\typescript.js'
 ```
 
-2026-09-27 复验结果：
+2026-10-08 v3 复验结果：
 
 | 入口 | 覆盖范围 | 结果 |
 | --- | --- | --- |
-| [test-ui-model.cjs](../scripts/test-ui-model.cjs) | 同步模型测试，以及主题资源一致性检查；含格式配置、音频头与时长、PCM 振幅、波形和动效模型 | 54/54 |
-| [test-recording-service.cjs](../scripts/test-recording-service.cjs) | 真实录音服务逻辑，替换音频、文件、时钟与后台任务接口；覆盖两小时加速 PCM 流、队列上限、部分写入、RIFF 大小边界、暂停继续及故障清理 | 15/15 |
-| [test-recording-repository.cjs](../scripts/test-recording-repository.cjs) | 真实仓库及导出逻辑；覆盖文件/索引事务、同一时刻命名、路径校验、损坏文件保留、容器参数、部分读写与失败清理 | 34/34 |
-| [test-recording-actions.cjs](../scripts/test-recording-actions.cjs) | 提取实际页面操作方法，替换对话框、播放和仓库接口；覆盖确认顺序、重复操作、准备期删除保护及失败状态恢复、正常取消确认框和稳定标题栏菜单 | 12/12 |
-| [test-playback-service.cjs](../scripts/test-playback-service.cjs) | 真实播放服务与可控异步播放器；覆盖加载替换、旧回调隔离、释放顺序、音频打断、Seek、超时及错误清理 | 35/35 |
-| [test-audio-conversion-service.cjs](../scripts/test-audio-conversion-service.cjs) | 真实转换服务与可控原生接口；覆盖参数限制、进度/取消、资源释放、输出登记及失败保留原件 | 16/16 |
+| [test-ui-model.cjs](../scripts/test-ui-model.cjs) | 同步模型与主题资源检查；含格式配置、音频头、PCM 振幅、动效及缓存曲线等价性 | 55/55 |
+| [test-recording-service.cjs](../scripts/test-recording-service.cjs) | 两小时加速 PCM 流、背压、短写入、RIFF 边界、暂停继续、中途检查点、队列合并及采集停滞收尾 | 19/19 |
+| [test-recording-repository.cjs](../scripts/test-recording-repository.cjs) | 文件/索引事务、路径、损坏文件、容器参数、部分读写；批量扫描次数、期间新录音保存及批次刷新失败 | 37/37 |
+| [test-recording-actions.cjs](../scripts/test-recording-actions.cjs) | 真实页面方法的确认顺序、重复操作、删除保护、失败恢复、正常取消确认框及异步批次锁 | 13/13 |
+| [test-playback-service.cjs](../scripts/test-playback-service.cjs) | 加载替换、旧回调隔离、释放、音频打断、Seek、准备/控制超时与界面回调异常 | 37/37 |
+| [test-audio-conversion-service.cjs](../scripts/test-audio-conversion-service.cjs) | 参数、进度/取消、资源释放、登记失败保护，以及单调进度、重复通知抑制和服务复用 | 17/17 |
 
-合计 166/166。真实容器参数可通过 `node scripts/inspect-audio-files.cjs <typescript.js> <audio-file...>` 检查；该检查不会完整解码音频。
+合计 178/178。真实容器参数可通过 `node scripts/inspect-audio-files.cjs <typescript.js> <audio-file...>` 检查；该检查不会完整解码音频。独立流式解码与无损比较使用 `node scripts/verify-audio-streams.cjs <fixture-directory>`，需要本机 FFmpeg。
 
 脚本失败时返回非零退出码。Host 检查通过源码转译执行逻辑，不替代 ArkTS 编译、ArkUI 渲染或设备音频测试。其中“两小时”是加速数据流模拟，并非两小时设备录音；FLAC 桥接的调用顺序测试也不验证系统编码器生成的音频文件。
 
@@ -124,6 +124,8 @@ devecocli build --modules entry@ohosTest
 该命令只构建测试包，不执行设备测试。默认测试模块执行单元用例，原生 FLAC、转换和文件播放集成测试按需启用。设备执行结果见[音频验证记录](../data/audio-functional-validation/README.md)和[录音增强记录](../docs/RECORDING_ENHANCEMENTS.md)。
 
 ## 验证状态
+
+2026-10-08 v3：Host 178/178，Debug、Release、测试包构建通过，版本为 3.0.0 / 3000000。真实 MatePad Air 的覆盖安装与后续结果以 [v3 验证记录](../docs/V3_OPTIMIZATION.md)为准。
 
 2026-09-27 功能回归：Debug、Release、ohosTest 构建通过，Host 166/166；API 24 平板模拟器 67/67（52 单元、10 FLAC 集成、5 转换集成）通过。15 个文件（11 个转换输出、4 个输入样本）由 FFmpeg 完整解码，5 组 PCM 逐样点一致。WAV、FLAC、M4A 既有录音的隔离副本均通过头/中/尾服务播放；系统文件选择器保存的 FLAC 副本与原件 SHA-256 一致。
 

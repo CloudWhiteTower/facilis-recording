@@ -2,7 +2,7 @@ import { RecordingState } from '../models/RecordingTypes';
 import { HarmonyPalette, HarmonyTheme, ThemeMode } from '../utils/HarmonyTheme';
 import { WaveformUtils } from '../utils/WaveformUtils';
 import { WaveformMotion, WaveformScroll } from '../utils/WaveformMotion';
-import { WaveformCurve, WaveSegment } from '../utils/WaveformCurve';
+import { WaveformCurve, WaveformGeometry, WaveSegment } from '../utils/WaveformCurve';
 import { NavigationStore } from '../utils/NavigationStore';
 import { CanvasFrameDriver } from '../utils/CanvasFrameDriver';
 import { MotionTheme } from '../utils/MotionTheme';
@@ -28,6 +28,10 @@ export struct LiveWaveform {
   private previousState: RecordingState = RecordingState.IDLE;
   private readonly frames: CanvasFrameDriver = new CanvasFrameDriver();
   private readonly scroll: WaveformScroll = new WaveformScroll();
+  private readonly geometry: WaveformGeometry = new WaveformGeometry();
+  private strokeGradient: CanvasGradient | undefined = undefined;
+  private fillGradient: CanvasGradient | undefined = undefined;
+  private gradientKey: string = '';
 
   aboutToAppear(): void {
     this.scroll.reset(this.values);
@@ -46,6 +50,7 @@ export struct LiveWaveform {
           .height(this.renderHeight)
           .onReady((): void => {
             this.canvasReady = true;
+            this.gradientKey = '';
             this.onStateChanged();
           })
           .onAreaChange((oldValue: Area, newValue: Area): void => {
@@ -131,12 +136,53 @@ export struct LiveWaveform {
     }
     this.drawGuides(width, height);
 
-    const points = WaveformCurve.points(this.scroll.values, width, height, this.scroll.scrollPhase,
-      this.dbFloor, this.dbCeiling);
-    const segments = WaveformCurve.segments(points);
+    this.geometry.update(this.scroll.values, width, height, this.dbFloor, this.dbCeiling);
+    const points = this.geometry.points;
+    const segments = this.geometry.segments;
+    const shift = this.geometry.scrollOffset(this.scroll.scrollPhase);
     if (segments.length === 0) {
       return;
     }
+    this.updateGradients(width);
+    const fill = this.fillGradient;
+    const stroke = this.strokeGradient;
+    if (fill === undefined || stroke === undefined) { return; }
+    this.context.save();
+    this.context.beginPath();
+    this.context.rect(0, 0, width - 3, height);
+    this.context.clip();
+    this.traceCurve(segments, shift);
+    this.context.lineTo(points[points.length - 1].x + shift, height - 3);
+    this.context.lineTo(points[0].x + shift, height - 3);
+    this.context.closePath();
+    this.context.fillStyle = fill;
+    this.context.fill();
+
+    this.traceCurve(segments, shift);
+    this.context.strokeStyle = stroke;
+    this.context.lineWidth = 1.8;
+    this.context.lineCap = 'round';
+    this.context.lineJoin = 'round';
+    this.context.shadowBlur = 0;
+    this.context.stroke();
+    if (this.recordingState === RecordingState.RECORDING) {
+      this.context.beginPath();
+      this.context.rect(width * (1 - WaveformUtils.LIVE_FRACTION), 0, width, height);
+      this.context.clip();
+      this.traceCurve(segments, shift);
+      this.context.shadowColor = this.waveColor(0.38);
+      this.context.shadowBlur = 6;
+      this.context.stroke();
+    }
+    this.context.restore();
+    if (this.recordingState === RecordingState.RECORDING) {
+      this.drawLiveHead(segments[segments.length - 1], shift);
+    }
+  }
+
+  private updateGradients(width: number): void {
+    const key = `${width}:${this.recordingState}:${this.accentColor}:${this.themeMode}`;
+    if (this.gradientKey === key && this.strokeGradient !== undefined && this.fillGradient !== undefined) { return; }
     const gradient = this.context.createLinearGradient(0, 0, width, 0);
     if (this.recordingState === RecordingState.PAUSED) {
       gradient.addColorStop(0, this.waveColor(0));
@@ -154,46 +200,17 @@ export struct LiveWaveform {
     fill.addColorStop(WaveformUtils.FADE_FRACTION, this.waveColor(0.035));
     fill.addColorStop(1, this.recordingState === RecordingState.PAUSED ?
       this.pausedWaveColor(0.065) : this.waveColor(0.14));
-    this.context.save();
-    this.context.beginPath();
-    this.context.rect(0, 0, width - 3, height);
-    this.context.clip();
-    this.traceCurve(segments);
-    this.context.lineTo(points[points.length - 1].x, height - 3);
-    this.context.lineTo(points[0].x, height - 3);
-    this.context.closePath();
-    this.context.fillStyle = fill;
-    this.context.fill();
-
-    this.traceCurve(segments);
-    this.context.strokeStyle = gradient;
-    this.context.lineWidth = 1.8;
-    this.context.lineCap = 'round';
-    this.context.lineJoin = 'round';
-    this.context.shadowBlur = 0;
-    this.context.stroke();
-    if (this.recordingState === RecordingState.RECORDING) {
-      // Only the newest portion receives a soft highlight, with no per-sample shadows.
-      this.context.beginPath();
-      this.context.rect(width * (1 - WaveformUtils.LIVE_FRACTION), 0, width, height);
-      this.context.clip();
-      this.traceCurve(segments);
-      this.context.shadowColor = this.waveColor(0.38);
-      this.context.shadowBlur = 6;
-      this.context.stroke();
-    }
-    this.context.restore();
-    if (this.recordingState === RecordingState.RECORDING) {
-      this.drawLiveHead(segments[segments.length - 1]);
-    }
+    this.strokeGradient = gradient;
+    this.fillGradient = fill;
+    this.gradientKey = key;
   }
 
-  private traceCurve(segments: WaveSegment[]): void {
+  private traceCurve(segments: WaveSegment[], shift: number): void {
     this.context.beginPath();
-    this.context.moveTo(segments[0].start.x, segments[0].start.y);
+    this.context.moveTo(segments[0].start.x + shift, segments[0].start.y);
     for (const segment of segments) {
-      this.context.bezierCurveTo(segment.first.x, segment.first.y,
-        segment.second.x, segment.second.y, segment.end.x, segment.end.y);
+      this.context.bezierCurveTo(segment.first.x + shift, segment.first.y,
+        segment.second.x + shift, segment.second.y, segment.end.x + shift, segment.end.y);
     }
   }
 
@@ -223,13 +240,13 @@ export struct LiveWaveform {
     this.context.globalAlpha = 1;
   }
 
-  private drawLiveHead(segment: WaveSegment): void {
+  private drawLiveHead(segment: WaveSegment, shift: number): void {
     const head = WaveformCurve.at(segment, this.scroll.scrollPhase);
     this.context.fillStyle = this.waveColor(1);
     this.context.shadowColor = this.waveColor(0.72);
     this.context.shadowBlur = 12;
     this.context.beginPath();
-    this.context.arc(head.x, head.y, 2.4, 0, Math.PI * 2);
+    this.context.arc(head.x + shift, head.y, 2.4, 0, Math.PI * 2);
     this.context.fill();
     this.context.shadowBlur = 0;
   }

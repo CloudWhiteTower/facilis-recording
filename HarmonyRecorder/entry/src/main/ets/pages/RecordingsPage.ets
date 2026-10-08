@@ -62,9 +62,15 @@ export struct RecordingsPage {
   @StorageLink(ThemeStore.MODE_KEY) private themeMode: number = ThemeMode.LIGHT;
   @StorageLink(MotionTheme.REDUCE_KEY) private reduceMotion: boolean = false;
   private pendingTrashConfirmation: RecordingInfo[] = [];
+  private filteredSource: RecordingInfo[] | undefined = undefined;
+  private filteredQuery: string = '';
+  private filteredCache: RecordingInfo[] = [];
+  private rowsSource: RecordingInfo[] | undefined = undefined;
+  private rowsKey: string = '';
+  private rowsCache: RecordingLibraryRow[] = [];
 
   aboutToAppear(): void {
-    this.loadRecordings();
+    if (this.isVisible) { this.loadRecordings(); }
   }
 
   private onVisibilityChanged(): void {
@@ -1029,7 +1035,7 @@ export struct RecordingsPage {
       });
       this.isConfirming = false;
       if (result.index === 1) {
-        this.runBatch(recordings, action);
+        await this.runBatch(recordings, action);
       }
     } catch (error) {
       // The native prompt API rejects with Error('cancel') for Back and mask dismissal.
@@ -1043,14 +1049,14 @@ export struct RecordingsPage {
     }
   }
 
-  private runBatch(recordings: RecordingInfo[], action: RecordingBatchAction): void {
+  private async runBatch(recordings: RecordingInfo[], action: RecordingBatchAction): Promise<void> {
     if (this.isWorking) {
       return;
     }
     this.isWorking = true;
     try {
       const context = this.getUIContext().getHostContext() as common.UIAbilityContext;
-      const result = RecordingRepository.applyBatch(context, recordings, action);
+      const result = await RecordingRepository.applyBatchAsync(context, recordings, action);
       const refreshed = this.loadRecordings(true, false, result.failedIds);
       if (!refreshed) {
         // The filesystem operation already succeeded; do not leave confirmed-deleted rows actionable after a refresh error.
@@ -1081,20 +1087,28 @@ export struct RecordingsPage {
   private filteredRecordings(): RecordingInfo[] {
     const source = this.showingTrash ? this.recentlyDeleted : this.recordings;
     const query = this.searchQuery.trim().toLowerCase();
+    if (this.filteredSource === source && this.filteredQuery === query) { return this.filteredCache; }
+    this.filteredSource = source;
+    this.filteredQuery = query;
     if (query.length === 0) {
-      return source;
+      this.filteredCache = source;
+      return this.filteredCache;
     }
-    return source.filter((recording: RecordingInfo): boolean => {
+    this.filteredCache = source.filter((recording: RecordingInfo): boolean => {
       return recording.displayName.toLowerCase().includes(query) ||
         recording.config.formatLabel.toLowerCase().includes(query);
     });
+    return this.filteredCache;
   }
 
   private libraryRows(): RecordingLibraryRow[] {
     const rows: RecordingLibraryRow[] = [];
     const prefix = this.showingTrash ? 'trash' : 'active';
+    const source = this.filteredRecordings();
+    const key = `${prefix}:${TimeUtils.dateSectionKey(Date.now())}`;
+    if (this.rowsSource === source && this.rowsKey === key) { return this.rowsCache; }
     let previousDay = '';
-    for (const recording of this.filteredRecordings()) {
+    for (const recording of source) {
       const timestamp = this.showingTrash ? recording.deletedAt : recording.createdAt;
       const day = TimeUtils.dateSectionKey(timestamp);
       if (day !== previousDay) {
@@ -1103,7 +1117,10 @@ export struct RecordingsPage {
       }
       rows.push(new RecordingLibraryRow(`${prefix}:recording:${recording.id}`, '', recording));
     }
-    return rows;
+    this.rowsSource = source;
+    this.rowsKey = key;
+    this.rowsCache = rows;
+    return this.rowsCache;
   }
   private palette(): HarmonyPalette {
     return HarmonyTheme.palette(this.themeMode);

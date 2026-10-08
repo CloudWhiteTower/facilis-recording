@@ -28,6 +28,32 @@ export class PcmWriteCursor {
 export class PcmStreamUtils {
   static readonly MAX_PENDING_PACKETS: number = 64;
   static readonly MAX_PENDING_BYTES: number = 2 * 1024 * 1024;
+  static readonly WRITE_BATCH_BYTES: number = 64 * 1024;
+
+  // Coalesce an already queued burst without delaying newly captured audio.
+  // The native bridge/file writer receives fewer jobs when storage is busy.
+  static takeWriteBatch(queue: Array<ArrayBuffer>): ArrayBuffer | undefined {
+    const first = queue.shift();
+    if (first === undefined || queue.length === 0 || first.byteLength >= PcmStreamUtils.WRITE_BATCH_BYTES) {
+      return first;
+    }
+    let length = first.byteLength;
+    let count = 0;
+    while (count < queue.length && length + queue[count].byteLength <= PcmStreamUtils.WRITE_BATCH_BYTES) {
+      length += queue[count].byteLength;
+      count += 1;
+    }
+    if (count === 0) { return first; }
+    const combined = new Uint8Array(length);
+    combined.set(new Uint8Array(first));
+    let offset = first.byteLength;
+    for (let index = 0; index < count; index++) {
+      combined.set(new Uint8Array(queue[index]), offset);
+      offset += queue[index].byteLength;
+    }
+    queue.splice(0, count);
+    return combined.buffer;
+  }
 
   static blockAlign(config: RecordingConfig): number {
     if ((config.format !== RecordingFormat.WAV && config.format !== RecordingFormat.FLAC) ||
