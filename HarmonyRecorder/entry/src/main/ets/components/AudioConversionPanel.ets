@@ -1,4 +1,5 @@
 import { common } from '@kit.AbilityKit';
+import { TextRole, VisualTheme } from '../utils/VisualTheme';
 import { RecordingFormat, RecordingInfo } from '../models/RecordingTypes';
 import { AudioConversionService } from '../services/AudioConversionService';
 import { HarmonyTokens, ThemeMode, ThemeStore } from '../utils/HarmonyTheme';
@@ -39,9 +40,10 @@ export struct AudioConversionPanel {
   build() {
     Column({ space: 16 }) {
       Text('转换格式')
-        .width('100%').fontSize(20).fontWeight(FontWeight.Bold).fontColor(HarmonyTokens.textPrimary())
+        .width('100%').attributeModifier(VisualTheme.text(TextRole.TITLE, true)).fontColor(HarmonyTokens.textPrimary())
+        .padding({ left: 8, bottom: 8 })
       Text(`原始录音：${this.recording.config.compactLabel} · ${this.recording.config.sampleRateLabel}`)
-        .width('100%').fontSize(13).fontColor(HarmonyTokens.textSecondary())
+        .width('100%').attributeModifier(VisualTheme.text(TextRole.METADATA)).fontColor(HarmonyTokens.textSecondary())
       Row({ space: 8 }) {
         this.formatButton(RecordingFormat.WAV)
         this.formatButton(RecordingFormat.FLAC)
@@ -54,23 +56,23 @@ export struct AudioConversionPanel {
         }.width('100%')
       }
       Text(this.explanation())
-        .width('100%').fontSize(13).fontColor(HarmonyTokens.textSecondary())
+        .width('100%').attributeModifier(VisualTheme.text(TextRole.METADATA)).fontColor(HarmonyTokens.textSecondary())
       if (this.recording.config.bitDepth > 16) {
         Text('当前 FLAC 转换支持 16 bit；此录音可直接保存原始 WAV，保留 24 bit 精度。')
-          .width('100%').fontSize(12).fontColor(HarmonyTokens.textSecondary())
+          .width('100%').attributeModifier(VisualTheme.text(TextRole.CAPTION)).fontColor(HarmonyTokens.textSecondary())
       }
       if (this.running) {
         Progress({ value: Math.round(this.progress * 100), total: 100, type: ProgressType.Linear })
           .width('100%').color(HarmonyTokens.primary())
         Text(this.cancelling ? '正在取消…' : `正在转换 ${Math.floor(this.progress * 100)}%`)
-          .fontSize(13).fontColor(HarmonyTokens.textSecondary())
+          .attributeModifier(VisualTheme.text(TextRole.METADATA)).fontColor(HarmonyTokens.textSecondary())
       }
       if (this.message.length > 0) {
-        Text(this.message).width('100%').fontSize(13).fontColor(HarmonyTokens.danger())
+        Text(this.message).width('100%').attributeModifier(VisualTheme.text(TextRole.METADATA)).fontColor(HarmonyTokens.danger())
       }
       Row({ space: 10 }) {
         Button(this.running ? '取消转换' : '返回')
-          .layoutWeight(1).height(44).fontColor(HarmonyTokens.textPrimary())
+          .layoutWeight(1).height(VisualTheme.CONTROL_HEIGHT).fontSize(VisualTheme.BODY_SIZE).fontWeight(FontWeight.Medium).fontColor(HarmonyTokens.textPrimary())
           .backgroundColor(HarmonyTokens.surfaceSubtle())
           .enabled(!this.cancelling)
           .attributeModifier(PressFeedback.button(this.themeMode, this.reduceMotion))
@@ -82,7 +84,7 @@ export struct AudioConversionPanel {
           })
         Button('开始转换')
           .id('audio-conversion-start')
-          .layoutWeight(1).height(44).fontColor(HarmonyTokens.onPrimary())
+          .layoutWeight(1).height(VisualTheme.CONTROL_HEIGHT).fontSize(VisualTheme.BODY_SIZE).fontWeight(FontWeight.Medium).fontColor(HarmonyTokens.onPrimary())
           .backgroundColor(HarmonyTokens.primary()).enabled(!this.running)
           .attributeModifier(PressFeedback.button(this.themeMode, this.reduceMotion, true))
           .onClick((): void => { this.convert(); })
@@ -94,7 +96,7 @@ export struct AudioConversionPanel {
   private formatButton(format: RecordingFormat) {
     Button(format.toUpperCase())
       .id(`audio-conversion-${format}`)
-      .layoutWeight(1).height(42)
+      .layoutWeight(1).height(VisualTheme.CONTROL_HEIGHT).fontSize(VisualTheme.BODY_SIZE).fontWeight(FontWeight.Medium)
       .backgroundColor(this.target === format ? HarmonyTokens.primary() : HarmonyTokens.surfaceSubtle())
       .fontColor(this.target === format ? HarmonyTokens.onPrimary() : HarmonyTokens.textPrimary())
       .enabled(!this.running && !(format === RecordingFormat.FLAC && this.recording.config.bitDepth > 16) &&
@@ -105,7 +107,7 @@ export struct AudioConversionPanel {
 
   @Builder
   private bitrateButton(value: number, label: string) {
-    Button(label).layoutWeight(1).height(36)
+    Button(label).layoutWeight(1).height(VisualTheme.CONTROL_HEIGHT).fontSize(VisualTheme.BODY_SIZE).fontWeight(FontWeight.Medium)
       .backgroundColor(this.bitrate === value ? HarmonyTokens.primarySubtle() : HarmonyTokens.surfaceSubtle())
       .fontColor(HarmonyTokens.textPrimary()).enabled(!this.running)
       .attributeModifier(PressFeedback.button(this.themeMode, this.reduceMotion))

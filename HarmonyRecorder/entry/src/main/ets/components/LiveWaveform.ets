@@ -1,4 +1,5 @@
 import { RecordingState } from '../models/RecordingTypes';
+import { TextRole, VisualTheme } from '../utils/VisualTheme';
 import { HarmonyPalette, HarmonyTheme, ThemeMode } from '../utils/HarmonyTheme';
 import { WaveformUtils } from '../utils/WaveformUtils';
 import { WaveformMotion, WaveformScroll } from '../utils/WaveformMotion';
@@ -282,7 +283,7 @@ export struct LiveWaveform {
   @Builder
   private levelMark(label: string) {
     Text(label)
-      .fontSize(10)
+      .attributeModifier(VisualTheme.text(TextRole.TICK))
       .fontColor(this.palette().textTertiary)
   }
 

@@ -1,4 +1,5 @@
 #include "audio_conversion.h"
+#include "pcm_conversion.h"
 #include <multimedia/native_audio_channel_layout.h>
 #include <multimedia/player_framework/native_avbuffer.h>
 #include <multimedia/player_framework/native_avcodec_audiocodec.h>
@@ -25,6 +26,8 @@
 #include <unistd.h>
 
 namespace {
+using facilis::ReadLe;
+using facilis::WriteLe;
 using Format = std::unique_ptr<OH_AVFormat, decltype(&OH_AVFormat_Destroy)>;
 using Buffer = std::unique_ptr<OH_AVBuffer, decltype(&OH_AVBuffer_Destroy)>;
 using Clock = std::chrono::steady_clock;
@@ -43,18 +46,6 @@ void Check(OH_AVErrCode value, const char *operation)
     if (value != AV_ERR_OK) {
         throw std::runtime_error(std::string(operation) + " failed (AVCodec " + std::to_string(value) + ")");
     }
-}
-
-uint32_t Le(const uint8_t *data, size_t size)
-{
-    uint32_t value = 0;
-    for (size_t i = 0; i < size; ++i) { value |= static_cast<uint32_t>(data[i]) << (8 * i); }
-    return value;
-}
-
-void PutLe(uint8_t *data, uint32_t value, size_t size)
-{
-    for (size_t i = 0; i < size; ++i) { data[i] = static_cast<uint8_t>(value >> (8 * i)); }
 }
 
 void ReadAt(int fd, uint8_t *data, size_t size, int64_t offset)
@@ -126,17 +117,17 @@ public:
         if (bytes_ % 2 != 0) { WriteAt(fd_, &pad, 1, static_cast<int64_t>(44 + bytes_)); }
         uint8_t header[44]{};
         std::memcpy(header, "RIFF", 4);
-        PutLe(header + 4, static_cast<uint32_t>(36 + bytes_ + bytes_ % 2), 4);
+        WriteLe(header + 4, static_cast<uint32_t>(36 + bytes_ + bytes_ % 2), 4);
         std::memcpy(header + 8, "WAVEfmt ", 8);
-        PutLe(header + 16, 16, 4);
-        PutLe(header + 20, 1, 2);
-        PutLe(header + 22, 1, 2);
-        PutLe(header + 24, static_cast<uint32_t>(rate_), 4);
-        PutLe(header + 28, static_cast<uint32_t>(rate_ * depth_ / 8), 4);
-        PutLe(header + 32, static_cast<uint32_t>(depth_ / 8), 2);
-        PutLe(header + 34, static_cast<uint32_t>(depth_), 2);
+        WriteLe(header + 16, 16, 4);
+        WriteLe(header + 20, 1, 2);
+        WriteLe(header + 22, 1, 2);
+        WriteLe(header + 24, static_cast<uint32_t>(rate_), 4);
+        WriteLe(header + 28, static_cast<uint32_t>(rate_ * depth_ / 8), 4);
+        WriteLe(header + 32, static_cast<uint32_t>(depth_ / 8), 2);
+        WriteLe(header + 34, static_cast<uint32_t>(depth_), 2);
         std::memcpy(header + 36, "data", 4);
-        PutLe(header + 40, static_cast<uint32_t>(bytes_), 4);
+        WriteLe(header + 40, static_cast<uint32_t>(bytes_), 4);
         WriteAt(fd_, header, sizeof(header), 0);
         Need(ftruncate(fd_, static_cast<off_t>(44 + bytes_ + bytes_ % 2)) == 0, "Finalize WAV length failed");
     }
@@ -324,52 +315,20 @@ std::unique_ptr<NativePcmWriter> MakeWriter(Conversion &job, bool floatInput)
     return std::make_unique<AacWriter>(job, floatInput);
 }
 
-// Convert only the storage representation. Sample rate/channel layout never change.
-void Repack(const uint8_t *input, size_t bytes, int sourceFormat, int targetFormat,
-    std::vector<uint8_t> &output)
+facilis::PcmFormat PcmFormatFor(int format)
 {
-    const auto width = [](int format) -> size_t {
-        if (format == SAMPLE_S16LE) { return 2; }
-        if (format == SAMPLE_S24LE) { return 3; }
-        Need(format == SAMPLE_S32LE || format == SAMPLE_F32LE, "Unsupported decoded PCM representation");
-        return 4;
-    };
-    const size_t inputWidth = width(sourceFormat);
-    const size_t outputWidth = width(targetFormat);
-    Need(bytes % inputWidth == 0, "Decoded audio ends in a partial PCM sample");
-    output.resize(bytes / inputWidth * outputWidth);
-    for (size_t i = 0; i < bytes / inputWidth; ++i) {
-        double value;
-        if (sourceFormat == SAMPLE_F32LE) {
-            float sample;
-            std::memcpy(&sample, input + i * inputWidth, sizeof(sample));
-            Need(std::isfinite(sample), "Decoder produced a non-finite audio sample");
-            value = sample;
-        } else {
-            const uint32_t raw = Le(input + i * inputWidth, inputWidth);
-            const int bits = static_cast<int>(inputWidth * 8);
-            const int64_t signedValue = (raw & (uint32_t{1} << (bits - 1))) ?
-                static_cast<int64_t>(raw) - (int64_t{1} << bits) : raw;
-            value = static_cast<double>(signedValue) / static_cast<double>(int64_t{1} << (bits - 1));
-        }
-        if (targetFormat == SAMPLE_F32LE) {
-            const float sample = static_cast<float>(value);
-            std::memcpy(output.data() + i * outputWidth, &sample, sizeof(sample));
-        } else {
-            const int bits = static_cast<int>(outputWidth * 8);
-            const int64_t scale = int64_t{1} << (bits - 1);
-            const double clamped = std::max(-1.0, std::min(1.0, value));
-            const int64_t sample = std::max(-scale, std::min(scale - 1, static_cast<int64_t>(std::llround(clamped * scale))));
-            PutLe(output.data() + i * outputWidth, static_cast<uint32_t>(sample), outputWidth);
-        }
-    }
+    if (format == SAMPLE_S16LE) { return facilis::PcmFormat::S16LE; }
+    if (format == SAMPLE_S24LE) { return facilis::PcmFormat::S24LE; }
+    if (format == SAMPLE_S32LE) { return facilis::PcmFormat::S32LE; }
+    Need(format == SAMPLE_F32LE, "Unsupported decoded PCM representation");
+    return facilis::PcmFormat::F32LE;
 }
 
 void WritePcm(NativePcmWriter &writer, const uint8_t *input, size_t bytes, int sourceFormat,
     int targetFormat, std::vector<uint8_t> &scratch)
 {
     if (sourceFormat == targetFormat) { writer.Write(input, bytes); return; }
-    Repack(input, bytes, sourceFormat, targetFormat, scratch);
+    facilis::RepackPcm(input, bytes, PcmFormatFor(sourceFormat), PcmFormatFor(targetFormat), scratch);
     writer.Write(scratch);
 }
 
@@ -377,7 +336,7 @@ void ConvertWav(Conversion &job)
 {
     uint8_t header[12];
     ReadAt(job.input, header, sizeof(header), 0);
-    const int64_t riffEnd = static_cast<int64_t>(Le(header + 4, 4)) + 8;
+    const int64_t riffEnd = static_cast<int64_t>(ReadLe(header + 4, 4)) + 8;
     Need(riffEnd <= job.inputSize && riffEnd >= 12, "WAV RIFF size is invalid");
     int64_t dataOffset = -1;
     uint32_t dataSize = 0;
@@ -389,18 +348,18 @@ void ConvertWav(Conversion &job)
         Need(++chunks <= 100000, "WAV contains too many metadata chunks");
         uint8_t chunk[8];
         ReadAt(job.input, chunk, sizeof(chunk), offset);
-        const uint32_t length = Le(chunk + 4, 4);
+        const uint32_t length = ReadLe(chunk + 4, 4);
         Need(offset + 8 + length <= riffEnd, "WAV chunk exceeds the file length");
         if (std::memcmp(chunk, "fmt ", 4) == 0) {
             Need(!foundFormat && length >= 16, "WAV has an invalid format chunk");
             uint8_t format[16];
             ReadAt(job.input, format, sizeof(format), offset + 8);
-            Need(Le(format, 2) == 1, "Conversion supports uncompressed integer PCM WAV only");
-            job.channels = static_cast<int>(Le(format + 2, 2));
-            job.rate = static_cast<int>(Le(format + 4, 4));
-            depth = static_cast<int>(Le(format + 14, 2));
+            Need(ReadLe(format, 2) == 1, "Conversion supports uncompressed integer PCM WAV only");
+            job.channels = static_cast<int>(ReadLe(format + 2, 2));
+            job.rate = static_cast<int>(ReadLe(format + 4, 4));
+            depth = static_cast<int>(ReadLe(format + 14, 2));
             Need(depth == 16 || depth == 24, "WAV must contain 16-bit or 24-bit PCM");
-            Need(Le(format + 12, 2) == static_cast<uint32_t>(job.channels * depth / 8), "WAV block alignment is invalid");
+            Need(ReadLe(format + 12, 2) == static_cast<uint32_t>(job.channels * depth / 8), "WAV block alignment is invalid");
             job.ValidateAudio(); foundFormat = true;
         } else if (std::memcmp(chunk, "data", 4) == 0) {
             Need(dataOffset < 0, "Multiple WAV data chunks are not supported");

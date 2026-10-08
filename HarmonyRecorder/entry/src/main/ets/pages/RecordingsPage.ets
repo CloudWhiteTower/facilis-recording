@@ -1,4 +1,5 @@
 import { common } from '@kit.AbilityKit';
+import { TextRole, VisualTheme } from '../utils/VisualTheme';
 import { BusinessError } from '@kit.BasicServicesKit';
 import {
   HdsNavigation,
@@ -87,7 +88,7 @@ export struct RecordingsPage {
         }
         if (this.status.length > 0) {
           Text(this.status)
-            .fontSize(12)
+            .attributeModifier(VisualTheme.text(TextRole.CAPTION))
             .fontColor(HarmonyTokens.danger())
             .width(ResponsiveLayout.contentWidth(this.isWide))
             .constraintSize({ maxWidth: 920 })
@@ -101,7 +102,7 @@ export struct RecordingsPage {
         }
         if (this.unreadableCount > 0) {
           Text(`${this.unreadableCount} 个录音文件不完整或无法识别；原文件已保留，可在详情查看错误。`)
-            .fontSize(12).fontColor(HarmonyTokens.textSecondary())
+            .attributeModifier(VisualTheme.text(TextRole.CAPTION)).fontColor(HarmonyTokens.textSecondary())
             .width(ResponsiveLayout.contentWidth(this.isWide)).constraintSize({ maxWidth: 920 })
             .padding({ left: ResponsiveLayout.horizontalPadding(this.isWide),
               right: ResponsiveLayout.horizontalPadding(this.isWide), bottom: 8 })
@@ -247,13 +248,15 @@ export struct RecordingsPage {
           Search({ value: this.searchQuery, placeholder: '搜索录音' })
             .id('recording_search')
             .layoutWeight(1)
-            .height(44)
+            .height(VisualTheme.CONTROL_HEIGHT)
+            .textFont({ size: VisualTheme.BODY_SIZE })
+            .placeholderFont({ size: VisualTheme.BODY_SIZE })
             .fontColor(HarmonyTokens.textPrimary())
             .placeholderColor(HarmonyTokens.textTertiary())
-            .searchIcon({ size: 18, color: HarmonyTokens.textSecondary() })
+            .searchIcon({ size: VisualTheme.ICON_TOOL, color: HarmonyTokens.textSecondary() })
             .cancelButton({
               style: CancelButtonStyle.CONSTANT,
-              icon: { size: 18, color: HarmonyTokens.textSecondary() }
+              icon: { size: VisualTheme.ICON_TOOL, color: HarmonyTokens.textSecondary() }
             })
             .backgroundColor(Color.Transparent)
             .borderRadius(18)
@@ -265,11 +268,11 @@ export struct RecordingsPage {
             })
           Button() {
             SymbolGlyph($r('sys.symbol.xmark'))
-              .fontSize(19)
+              .fontSize(VisualTheme.ICON_TOOL)
               .fontColor([HarmonyTokens.textSecondary()])
           }
-          .width(44)
-          .height(44)
+          .width(VisualTheme.CONTROL_HEIGHT)
+          .height(VisualTheme.CONTROL_HEIGHT)
           .backgroundColor(Color.Transparent)
           .borderRadius(22)
           .accessibilityText('关闭搜索')
@@ -285,11 +288,11 @@ export struct RecordingsPage {
         } else {
           Button() {
             SymbolGlyph($r('sys.symbol.xmark'))
-              .fontSize(19)
+              .fontSize(VisualTheme.ICON_TOOL)
               .fontColor([HarmonyTokens.textSecondary()])
           }
-          .width(44)
-          .height(44)
+          .width(VisualTheme.CONTROL_HEIGHT)
+          .height(VisualTheme.CONTROL_HEIGHT)
           .backgroundColor(Color.Transparent)
           .borderRadius(22)
           .accessibilityText('退出多选')
@@ -303,11 +306,11 @@ export struct RecordingsPage {
           Blank().layoutWeight(1)
           Button() {
             SymbolGlyph($r('sys.symbol.checkmark_square'))
-              .fontSize(21)
+              .fontSize(VisualTheme.ICON_TOOL)
               .fontColor([HarmonyTokens.primary()])
           }
-          .width(44)
-          .height(44)
+          .width(VisualTheme.CONTROL_HEIGHT)
+          .height(VisualTheme.CONTROL_HEIGHT)
           .backgroundColor(HarmonyTokens.primarySubtle())
           .borderRadius(22)
           .accessibilityText('全选当前录音')
@@ -321,11 +324,11 @@ export struct RecordingsPage {
           if (this.showingTrash) {
             Button() {
               SymbolGlyph($r('sys.symbol.arrow_counterclockwise'))
-                .fontSize(20)
+                .fontSize(VisualTheme.ICON_TOOL)
                 .fontColor([HarmonyTokens.primary()])
             }
-            .width(44)
-            .height(44)
+            .width(VisualTheme.CONTROL_HEIGHT)
+            .height(VisualTheme.CONTROL_HEIGHT)
             .backgroundColor(HarmonyTokens.primarySubtle())
             .borderRadius(22)
             .enabled(this.selectedRecordingIds.length > 0 && !this.isWorking && !this.isConfirming)
@@ -339,11 +342,11 @@ export struct RecordingsPage {
           }
           Button() {
             SymbolGlyph($r('sys.symbol.trash'))
-              .fontSize(20)
+              .fontSize(VisualTheme.ICON_TOOL)
               .fontColor([HarmonyTokens.danger()])
           }
-          .width(44)
-          .height(44)
+          .width(VisualTheme.CONTROL_HEIGHT)
+          .height(VisualTheme.CONTROL_HEIGHT)
           .backgroundColor(HarmonyTokens.dangerSubtle())
           .borderRadius(22)
           .enabled(this.selectedRecordingIds.length > 0 && !this.isWorking && !this.isConfirming)
@@ -421,8 +424,7 @@ export struct RecordingsPage {
   private dateGroupHeader(label: string) {
     Text(label)
       .width('100%')
-      .fontSize(13)
-      .fontWeight(FontWeight.Medium)
+      .attributeModifier(VisualTheme.text(TextRole.METADATA, true))
       .fontColor(HarmonyTokens.textTertiary())
       .padding({ top: 12, bottom: 6 })
       .backgroundColor(HarmonyTokens.pageBackground())
@@ -434,8 +436,8 @@ export struct RecordingsPage {
       Row({ space: 10 }) {
         if (this.isSelecting) {
           Checkbox({ name: recording.id })
-            .width(44)
-            .height(44)
+            .width(VisualTheme.CONTROL_HEIGHT)
+            .height(VisualTheme.CONTROL_HEIGHT)
             .padding(10)
             .margin(0)
             .select(this.isRecordingSelected(recording.id))
@@ -453,14 +455,13 @@ export struct RecordingsPage {
         Row({ space: 12 }) {
           Column({ space: 5 }) {
             Text(recording.displayName)
-              .fontSize(17)
-              .fontWeight(FontWeight.Medium)
+              .attributeModifier(VisualTheme.text(TextRole.BODY, true))
               .fontColor(HarmonyTokens.textPrimary())
               .maxLines(1)
               .textOverflow({ overflow: TextOverflow.Ellipsis })
             Text(this.showingTrash ? `删除于 ${TimeUtils.formatDateTime(recording.deletedAt)}` :
               `${TimeUtils.formatDateTime(recording.createdAt)} · ${recording.config.formatLabel}`)
-              .fontSize(13)
+              .attributeModifier(VisualTheme.text(TextRole.METADATA))
               .fontColor(HarmonyTokens.textSecondary())
               .maxLines(1)
               .textOverflow({ overflow: TextOverflow.Ellipsis })
@@ -470,11 +471,10 @@ export struct RecordingsPage {
 
           Column({ space: 5 }) {
             Text(TimeUtils.formatDuration(recording.durationMs))
-              .fontSize(14)
-              .fontWeight(FontWeight.Medium)
+              .attributeModifier(VisualTheme.text(TextRole.METADATA, true, true))
               .fontColor(HarmonyTokens.textPrimary())
             Text(FileSizeUtils.format(recording.sizeBytes))
-              .fontSize(12)
+              .attributeModifier(VisualTheme.text(TextRole.CAPTION, false, true))
               .fontColor(HarmonyTokens.textTertiary())
           }
           .alignItems(HorizontalAlign.End)
@@ -495,12 +495,12 @@ export struct RecordingsPage {
         if (!this.showingTrash && !this.isSelecting) {
           Button() {
             SymbolGlyph($r('sys.symbol.ellipsis_circle'))
-              .fontSize(21)
+              .fontSize(VisualTheme.ICON_TOOL)
               .fontColor([HarmonyTokens.textSecondary()])
               .rotate({ angle: 90 })
           }
-            .width(44)
-            .height(44)
+            .width(VisualTheme.CONTROL_HEIGHT)
+            .height(VisualTheme.CONTROL_HEIGHT)
             .backgroundColor('#00000000')
             .borderRadius(20)
             .accessibilityText(`${recording.displayName}的更多操作`)
@@ -521,11 +521,11 @@ export struct RecordingsPage {
         Row({ space: 8 }) {
           Button() {
             SymbolGlyph($r('sys.symbol.arrow_counterclockwise'))
-              .fontSize(18)
+              .fontSize(VisualTheme.ICON_TOOL)
               .fontColor([HarmonyTokens.primary()])
           }
-            .width(44)
-            .height(44)
+            .width(VisualTheme.CONTROL_HEIGHT)
+            .height(VisualTheme.CONTROL_HEIGHT)
             .backgroundColor(HarmonyTokens.primarySubtle())
             .borderRadius(19)
             .accessibilityText('恢复录音')
@@ -538,11 +538,11 @@ export struct RecordingsPage {
             })
           Button() {
             SymbolGlyph($r('sys.symbol.trash'))
-              .fontSize(18)
+              .fontSize(VisualTheme.ICON_TOOL)
               .fontColor([HarmonyTokens.danger()])
           }
-            .width(44)
-            .height(44)
+            .width(VisualTheme.CONTROL_HEIGHT)
+            .height(VisualTheme.CONTROL_HEIGHT)
             .backgroundColor('#00000000')
             .borderRadius(19)
             .accessibilityText('永久删除录音')
@@ -583,8 +583,7 @@ export struct RecordingsPage {
         } else {
         Text(this.isQuickRenaming ? '重命名' : this.quickActionDisplayName())
           .width('100%')
-          .fontSize(20)
-          .fontWeight(FontWeight.Bold)
+          .attributeModifier(VisualTheme.text(TextRole.TITLE, true))
           .fontColor(HarmonyTokens.textPrimary())
           .maxLines(1)
           .textOverflow({ overflow: TextOverflow.Ellipsis })
@@ -593,13 +592,13 @@ export struct RecordingsPage {
         if (this.isQuickRenaming) {
           TextInput({ text: this.renameValue, placeholder: '录音名称' })
             .width('100%')
-            .height(48)
-            .fontSize(16)
+            .height(VisualTheme.INPUT_HEIGHT)
+            .fontSize(VisualTheme.BODY_SIZE)
             .fontColor(HarmonyTokens.textPrimary())
             .placeholderColor(HarmonyTokens.textTertiary())
             .backgroundColor(HarmonyTokens.surfaceSubtle())
             .border({ width: 1, color: HarmonyTokens.primaryBorder() })
-            .borderRadius(14)
+            .borderRadius(16)
             .defaultFocus(true)
             .maxLength(80)
             .transition(MotionTheme.appear(this.reduceMotion))
@@ -609,11 +608,11 @@ export struct RecordingsPage {
           Row({ space: 10 }) {
             Button() {
               SymbolGlyph($r('sys.symbol.xmark'))
-                .fontSize(20)
+                .fontSize(VisualTheme.ICON_TOOL)
                 .fontColor([HarmonyTokens.textSecondary()])
             }
               .layoutWeight(1)
-              .height(44)
+              .height(VisualTheme.CONTROL_HEIGHT)
               .backgroundColor(HarmonyTokens.surfaceSubtle())
               .borderRadius(16)
               .accessibilityText('取消重命名')
@@ -627,11 +626,11 @@ export struct RecordingsPage {
               })
             Button() {
               SymbolGlyph($r('sys.symbol.checkmark'))
-                .fontSize(20)
+                .fontSize(VisualTheme.ICON_TOOL)
                 .fontColor([HarmonyTokens.onPrimary()])
             }
               .layoutWeight(1)
-              .height(44)
+              .height(VisualTheme.CONTROL_HEIGHT)
               .backgroundColor(HarmonyTokens.primary())
               .borderRadius(16)
               .enabled(this.renameValue.trim().length > 0 && !this.isWorking && !this.isConfirming)
@@ -646,8 +645,8 @@ export struct RecordingsPage {
           .width('100%')
           .transition(MotionTheme.appear(this.reduceMotion))
         } else {
-          this.quickFileAction('保存到文件', (): void => { this.saveQuickToDevice(); })
-          this.quickFileAction('转换格式', (): void => {
+          this.quickFileAction($r('sys.symbol.arrow_down'), '保存到文件', (): void => { this.saveQuickToDevice(); })
+          this.quickFileAction($r('sys.symbol.waveform'), '转换格式', (): void => {
             const recording = this.quickActionRecording();
             if (recording !== undefined) {
               this.conversionRecording = recording;
@@ -657,10 +656,10 @@ export struct RecordingsPage {
           Button() {
             Row({ space: 14 }) {
               SymbolGlyph($r('sys.symbol.share'))
-                .fontSize(21)
+                .fontSize(VisualTheme.ICON_TOOL)
                 .fontColor([HarmonyTokens.primary()])
               Text('分享原始文件')
-                .fontSize(16)
+                .attributeModifier(VisualTheme.text(TextRole.BODY))
                 .fontColor(HarmonyTokens.textPrimary())
               Blank()
             }
@@ -668,7 +667,7 @@ export struct RecordingsPage {
           }
             .id('recording_quick_share')
             .width('100%')
-            .height(52)
+            .height(VisualTheme.ACTION_HEIGHT)
             .padding({ left: 16, right: 16 })
             .backgroundColor(HarmonyTokens.surfaceSubtle())
             .borderRadius(16)
@@ -683,17 +682,17 @@ export struct RecordingsPage {
           Button() {
             Row({ space: 14 }) {
               SymbolGlyph($r('sys.symbol.square_and_pencil'))
-                .fontSize(21)
+                .fontSize(VisualTheme.ICON_TOOL)
                 .fontColor([HarmonyTokens.primary()])
               Text('重命名')
-                .fontSize(16)
+                .attributeModifier(VisualTheme.text(TextRole.BODY))
                 .fontColor(HarmonyTokens.textPrimary())
               Blank()
             }
             .width('100%')
           }
             .width('100%')
-            .height(52)
+            .height(VisualTheme.ACTION_HEIGHT)
             .padding({ left: 16, right: 16 })
             .backgroundColor(HarmonyTokens.surfaceSubtle())
             .borderRadius(16)
@@ -711,17 +710,17 @@ export struct RecordingsPage {
           Button() {
             Row({ space: 14 }) {
               SymbolGlyph($r('sys.symbol.trash'))
-                .fontSize(21)
+                .fontSize(VisualTheme.ICON_TOOL)
                 .fontColor([HarmonyTokens.danger()])
               Text('移至最近删除')
-                .fontSize(16)
+                .attributeModifier(VisualTheme.text(TextRole.BODY))
                 .fontColor(HarmonyTokens.danger())
               Blank()
             }
             .width('100%')
           }
             .width('100%')
-            .height(52)
+            .height(VisualTheme.ACTION_HEIGHT)
             .padding({ left: 16, right: 16 })
             .backgroundColor(HarmonyTokens.dangerSubtle())
             .borderRadius(16)
@@ -747,10 +746,20 @@ export struct RecordingsPage {
   }
 
   @Builder
-  private quickFileAction(title: string, action: () => void) {
-    Button(title)
-      .width('100%').height(52).padding({ left: 16, right: 16 })
-      .fontSize(16).fontColor(HarmonyTokens.textPrimary())
+  private quickFileAction(symbol: Resource, title: string, action: () => void) {
+    Button() {
+      Row({ space: 14 }) {
+        SymbolGlyph(symbol)
+          .fontSize(VisualTheme.ICON_TOOL)
+          .fontColor([HarmonyTokens.primary()])
+        Text(title)
+          .attributeModifier(VisualTheme.text(TextRole.BODY))
+          .fontColor(HarmonyTokens.textPrimary())
+        Blank()
+      }
+      .width('100%')
+    }
+      .width('100%').height(VisualTheme.ACTION_HEIGHT).padding({ left: 16, right: 16 })
       .backgroundColor(HarmonyTokens.surfaceSubtle()).borderRadius(16)
       .enabled(!this.isWorking && !this.isConfirming)
       .attributeModifier(PressFeedback.button(this.themeMode, this.reduceMotion))
@@ -778,17 +787,16 @@ export struct RecordingsPage {
       Row() {
         Column({ space: 4 }) {
           Text('最近删除')
-            .fontSize(16)
-            .fontWeight(FontWeight.Medium)
+            .attributeModifier(VisualTheme.text(TextRole.BODY, true))
             .fontColor(HarmonyTokens.textPrimary())
           Text(this.recentlyDeleted.length > 0 ? `${this.recentlyDeleted.length} 条可恢复录音` : '没有可恢复录音')
-            .fontSize(13)
+            .attributeModifier(VisualTheme.text(TextRole.METADATA))
             .fontColor(HarmonyTokens.textSecondary())
         }
         .alignItems(HorizontalAlign.Start)
         .layoutWeight(1)
         SymbolGlyph($r('sys.symbol.chevron_right'))
-          .fontSize(19)
+          .fontSize(VisualTheme.ICON_TOOL)
           .fontColor([HarmonyTokens.primary()])
       }
       .width('100%')
@@ -811,23 +819,22 @@ export struct RecordingsPage {
   private emptyState() {
     Column({ space: 10 }) {
       SymbolGlyph($r('sys.symbol.waveform'))
-        .fontSize(44)
+        .fontSize(VisualTheme.ICON_EMPTY)
         .fontColor([HarmonyTokens.textTertiary()])
       Text(this.showingTrash ? '最近删除为空' :
         (this.searchQuery.trim().length > 0 ? '没有匹配的录音' : '还没有录音'))
-        .fontSize(15)
-        .fontWeight(FontWeight.Medium)
+        .attributeModifier(VisualTheme.text(TextRole.BODY, true))
         .fontColor(HarmonyTokens.textPrimary())
       if (!this.showingTrash && this.recordings.length === 0) {
         Button() {
           SymbolGlyph($r('sys.symbol.mic_fill'))
-            .fontSize(22)
+            .fontSize(VisualTheme.ICON_SECONDARY)
             .fontColor([HarmonyTokens.onPrimary()])
         }
-          .width(52)
-          .height(52)
+          .width(VisualTheme.SECONDARY_BUTTON)
+          .height(VisualTheme.SECONDARY_BUTTON)
           .backgroundColor(HarmonyTokens.primary())
-          .borderRadius(26)
+          .borderRadius(VisualTheme.SECONDARY_BUTTON / 2)
           .accessibilityText('开始录音')
           .animation(undefined)
           .attributeModifier(PressFeedback.button(this.themeMode, this.reduceMotion))

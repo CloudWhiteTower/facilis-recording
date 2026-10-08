@@ -1,4 +1,5 @@
 import { HdsNavigation, HdsNavigationTitleMode } from '@kit.UIDesignKit';
+import { TextRole, VisualTheme } from '../utils/VisualTheme';
 import { HarmonyPalette, HarmonyTheme, HarmonyTokens, ThemeMode, ThemeStore } from '../utils/HarmonyTheme';
 import { MaterialRole, MaterialTheme } from '../utils/MaterialTheme';
 import { MotionTheme } from '../utils/MotionTheme';
@@ -18,8 +19,7 @@ export struct SettingsPage {
         Column({ space: 12 }) {
           Text('外观')
             .width('100%')
-            .fontSize(13)
-            .fontWeight(FontWeight.Medium)
+            .attributeModifier(VisualTheme.text(TextRole.METADATA, true))
             .fontColor(HarmonyTokens.textTertiary())
             .padding({ left: 4 })
 
@@ -90,11 +90,10 @@ export struct SettingsPage {
     Button() {
       Column({ space: 8 }) {
         SymbolGlyph(this.themeMode === mode ? selectedSymbol : symbol)
-          .fontSize(28)
+          .fontSize(VisualTheme.ICON_PRIMARY)
           .fontColor([this.themeMode === mode ? HarmonyTokens.primary() : HarmonyTokens.textSecondary()])
         Text(title)
-          .fontSize(13)
-          .fontWeight(this.themeMode === mode ? FontWeight.Medium : FontWeight.Regular)
+          .attributeModifier(VisualTheme.text(TextRole.METADATA, this.themeMode === mode))
           .fontColor(this.themeMode === mode ? HarmonyTokens.primary() : HarmonyTokens.textSecondary())
       }
     }

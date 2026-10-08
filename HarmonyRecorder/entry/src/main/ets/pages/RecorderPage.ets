@@ -1,4 +1,5 @@
 import { common } from '@kit.AbilityKit';
+import { TextRole, VisualTheme } from '../utils/VisualTheme';
 import { HdsNavigation } from '@kit.UIDesignKit';
 import { LiveWaveform } from '../components/LiveWaveform';
 import { StageEdgeLight } from '../components/StageEdgeLight';
@@ -27,10 +28,9 @@ struct RecordingQualitySheet {
       Column({ space: 0 }) {
         Text('录音质量')
           .width('100%')
-          .fontSize(20)
-          .fontWeight(FontWeight.Bold)
+          .attributeModifier(VisualTheme.text(TextRole.TITLE, true))
           .fontColor(HarmonyTokens.textPrimary())
-          .padding({ left: 8, bottom: 14 })
+          .padding({ left: 8, bottom: 8 })
         this.formatSetting()
         Divider().color(HarmonyTokens.divider()).margin({ left: 8, right: 8 })
         this.sampleRateSetting()
@@ -51,7 +51,7 @@ struct RecordingQualitySheet {
     Column({ space: 3 }) {
       Text('格式')
         .width('100%')
-        .fontSize(12)
+        .attributeModifier(VisualTheme.text(TextRole.CAPTION))
         .fontColor(HarmonyTokens.textSecondary())
         .padding({ left: 10 })
       Select([{ value: 'WAV' }, { value: 'M4A' }, { value: 'FLAC' }])
@@ -59,8 +59,10 @@ struct RecordingQualitySheet {
           this.selectedFormat === RecordingFormat.M4A ? 1 : 2)
         .value(this.selectedFormat.toUpperCase())
         .width('100%')
-        .height(44)
-        .font({ size: 17, weight: FontWeight.Medium })
+        .height(VisualTheme.CONTROL_HEIGHT)
+        .font({ size: VisualTheme.BODY_SIZE, weight: FontWeight.Medium })
+        .optionFont({ size: VisualTheme.BODY_SIZE, weight: FontWeight.Medium })
+        .selectedOptionFont({ size: VisualTheme.BODY_SIZE, weight: FontWeight.Medium })
         .fontColor(HarmonyTokens.textPrimary())
         .backgroundColor(Color.Transparent)
         .selectedOptionBgColor(HarmonyTokens.primarySubtle())
@@ -86,15 +88,17 @@ struct RecordingQualitySheet {
     Column({ space: 3 }) {
       Text('采样率')
         .width('100%')
-        .fontSize(12)
+        .attributeModifier(VisualTheme.text(TextRole.CAPTION))
         .fontColor(HarmonyTokens.textSecondary())
         .padding({ left: 10 })
       Select([{ value: '44.1 kHz' }, { value: '48 kHz' }])
         .selected(this.selectedSampleRate === 44100 ? 0 : 1)
         .value(this.selectedSampleRate === 44100 ? '44.1 kHz' : '48 kHz')
         .width('100%')
-        .height(44)
-        .font({ size: 17, weight: FontWeight.Medium })
+        .height(VisualTheme.CONTROL_HEIGHT)
+        .font({ size: VisualTheme.BODY_SIZE, weight: FontWeight.Medium })
+        .optionFont({ size: VisualTheme.BODY_SIZE, weight: FontWeight.Medium })
+        .selectedOptionFont({ size: VisualTheme.BODY_SIZE, weight: FontWeight.Medium })
         .fontColor(HarmonyTokens.textPrimary())
         .backgroundColor(Color.Transparent)
         .selectedOptionBgColor(HarmonyTokens.primarySubtle())
@@ -119,7 +123,7 @@ struct RecordingQualitySheet {
     Column({ space: 3 }) {
       Text(this.selectedFormat === RecordingFormat.M4A ? '码率' : '位深')
         .width('100%')
-        .fontSize(12)
+        .attributeModifier(VisualTheme.text(TextRole.CAPTION))
         .fontColor(HarmonyTokens.textSecondary())
         .padding({ left: 10 })
       if (this.selectedFormat === RecordingFormat.WAV) {
@@ -127,8 +131,10 @@ struct RecordingQualitySheet {
           .selected(this.selectedWavBitDepth === 16 ? 0 : 1)
           .value(`${this.selectedWavBitDepth} bit`)
           .width('100%')
-          .height(44)
-          .font({ size: 17, weight: FontWeight.Medium })
+          .height(VisualTheme.CONTROL_HEIGHT)
+          .font({ size: VisualTheme.BODY_SIZE, weight: FontWeight.Medium })
+          .optionFont({ size: VisualTheme.BODY_SIZE, weight: FontWeight.Medium })
+          .selectedOptionFont({ size: VisualTheme.BODY_SIZE, weight: FontWeight.Medium })
           .fontColor(HarmonyTokens.textPrimary())
           .backgroundColor(Color.Transparent)
           .selectedOptionBgColor(HarmonyTokens.primarySubtle())
@@ -143,18 +149,19 @@ struct RecordingQualitySheet {
           })
       } else if (this.selectedFormat === RecordingFormat.FLAC) {
         Text('16 bit · 无损压缩')
-          .fontSize(17)
-          .fontWeight(FontWeight.Medium)
+          .attributeModifier(VisualTheme.text(TextRole.BODY, true))
           .fontColor(HarmonyTokens.textPrimary())
-          .height(44)
+          .height(VisualTheme.CONTROL_HEIGHT)
           .padding({ left: 10 })
       } else {
         Select([{ value: '128 kbps' }, { value: '256 kbps' }])
           .selected(this.selectedAacBitrate === 128000 ? 0 : 1)
           .value(`${this.selectedAacBitrate / 1000} kbps`)
           .width('100%')
-          .height(44)
-          .font({ size: 17, weight: FontWeight.Medium })
+          .height(VisualTheme.CONTROL_HEIGHT)
+          .font({ size: VisualTheme.BODY_SIZE, weight: FontWeight.Medium })
+          .optionFont({ size: VisualTheme.BODY_SIZE, weight: FontWeight.Medium })
+          .selectedOptionFont({ size: VisualTheme.BODY_SIZE, weight: FontWeight.Medium })
           .fontColor(HarmonyTokens.textPrimary())
           .backgroundColor(Color.Transparent)
           .selectedOptionBgColor(HarmonyTokens.primarySubtle())
@@ -305,7 +312,7 @@ export struct RecorderPage {
   @Builder
   private noticeText() {
     Text(this.notice)
-      .fontSize(12)
+      .attributeModifier(VisualTheme.text(TextRole.CAPTION))
       .fontColor(HarmonyTokens.danger())
       .textAlign(TextAlign.Center)
       .width('100%')
@@ -324,7 +331,7 @@ export struct RecorderPage {
                 .transition(MotionTheme.appear(this.reduceMotion))
             } else if (this.recordingState === RecordingState.PAUSED) {
               SymbolGlyph($r('sys.symbol.pause_fill'))
-                .fontSize(12)
+                .fontSize(VisualTheme.ICON_SMALL)
                 .fontColor([HarmonyTokens.waveformIdle()])
                 .transition(MotionTheme.appear(this.reduceMotion))
             }
@@ -332,8 +339,7 @@ export struct RecorderPage {
           .width(12)
           .height(16)
           Text(TimeUtils.formatDuration(this.durationMs))
-            .fontSize(18)
-            .fontWeight(FontWeight.Medium)
+            .attributeModifier(VisualTheme.text(TextRole.TIMER, true, true))
             .fontColor(HarmonyTokens.textPrimary())
             .letterSpacing(0.6)
         }
@@ -404,12 +410,11 @@ export struct RecorderPage {
     Button() {
       Row({ space: 6 }) {
           Text(this.compactFormatLabel())
-            .fontSize(13)
-            .fontWeight(FontWeight.Medium)
+            .attributeModifier(VisualTheme.text(TextRole.METADATA, true))
             .fontColor(HarmonyTokens.textPrimary())
             .maxLines(1)
           SymbolGlyph($r('sys.symbol.chevron_down'))
-            .fontSize(12)
+            .fontSize(VisualTheme.ICON_SMALL)
             .fontColor([HarmonyTokens.primary()])
             .animation(undefined)
             .rotate({ angle: this.showFormatSheet && !this.reduceMotion ? 180 : 0 })
@@ -444,8 +449,7 @@ export struct RecorderPage {
   private fileSizeMeta() {
     Column({ space: 2 }) {
       Text(FileSizeUtils.format(this.fileSizeBytes))
-        .fontSize(13)
-        .fontWeight(FontWeight.Medium)
+        .attributeModifier(VisualTheme.text(TextRole.METADATA, true, true))
         .fontColor(HarmonyTokens.textPrimary())
     }
     .layoutWeight(1)
@@ -471,11 +475,11 @@ export struct RecorderPage {
         Row({ space: 8 }) {
           Button() {
             SymbolGlyph($r('sys.symbol.trash'))
-              .fontSize(22)
+              .fontSize(VisualTheme.ICON_SECONDARY)
               .fontColor([HarmonyTokens.danger()])
           }
-          .width(56)
-          .height(56)
+          .width(VisualTheme.SECONDARY_BUTTON)
+          .height(VisualTheme.SECONDARY_BUTTON)
           .backgroundColor(HarmonyTokens.dangerSubtle())
           .borderRadius(28)
           .enabled(!this.isWorking)
@@ -491,23 +495,23 @@ export struct RecorderPage {
           Button({ type: ButtonType.Circle }) {
             if (this.recordingState === RecordingState.RECORDING) {
               SymbolGlyph($r('sys.symbol.pause_fill'))
-                .fontSize(27)
+                .fontSize(VisualTheme.ICON_PRIMARY)
                 .fontColor([HarmonyTokens.onPrimary()])
                 .transition(MotionTheme.appear(this.reduceMotion))
             } else {
               SymbolGlyph($r('sys.symbol.play_fill'))
-                .fontSize(27)
+                .fontSize(VisualTheme.ICON_PRIMARY)
                 .fontColor([HarmonyTokens.onPrimary()])
                 .transition(MotionTheme.appear(this.reduceMotion))
             }
           }
-          .width(68)
-          .height(68)
+          .width(VisualTheme.PRIMARY_BUTTON)
+          .height(VisualTheme.PRIMARY_BUTTON)
           .backgroundColor(HarmonyTokens.primary())
           .linearGradient({ angle: 155, colors: [[HarmonyTokens.controlLight(), 0],
             [HarmonyTokens.primary(), 0.64]] })
           .border({ width: 0.75, color: HarmonyTokens.glassHighlight() })
-          .borderRadius(34)
+          .borderRadius(VisualTheme.PRIMARY_BUTTON / 2)
           .clip(true)
           .enabled(!this.isWorking)
           .animation(undefined)
@@ -521,11 +525,11 @@ export struct RecorderPage {
 
           Button() {
             SymbolGlyph($r('sys.symbol.checkmark'))
-              .fontSize(23)
+              .fontSize(VisualTheme.ICON_SECONDARY)
               .fontColor([HarmonyTokens.primary()])
           }
-          .width(56)
-          .height(56)
+          .width(VisualTheme.SECONDARY_BUTTON)
+          .height(VisualTheme.SECONDARY_BUTTON)
           .backgroundColor(HarmonyTokens.primarySubtle())
           .borderRadius(28)
           .enabled(!this.isWorking)
@@ -549,25 +553,25 @@ export struct RecorderPage {
       } else {
         Stack({ alignContent: Alignment.Center }) {
           Column()
-            .width(104)
-            .height(104)
+            .width(VisualTheme.PRIMARY_PLATE)
+            .height(VisualTheme.PRIMARY_PLATE)
             .attributeModifier(MaterialTheme.surface(MaterialRole.CONTROL, this.themeMode))
-            .borderRadius(55)
+            .borderRadius(VisualTheme.PRIMARY_PLATE / 2)
             .hitTestBehavior(HitTestMode.None)
           Button({ type: ButtonType.Circle }) {
             SymbolGlyph($r('sys.symbol.mic_fill'))
-              .fontSize(30)
+              .fontSize(VisualTheme.ICON_PRIMARY)
               .fontColor([HarmonyTokens.onPrimary()])
           }
-          .width(82)
-          .height(82)
+          .width(VisualTheme.PRIMARY_BUTTON)
+          .height(VisualTheme.PRIMARY_BUTTON)
           .backgroundColor(HarmonyTokens.primary())
           .radialGradient({
             center: ['30%', '15%'],
             radius: '110%',
             colors: [[HarmonyTokens.controlLight(), 0], [HarmonyTokens.primary(), 0.70]]
           })
-          .borderRadius(41)
+          .borderRadius(VisualTheme.PRIMARY_BUTTON / 2)
           .clip(true)
           .border({ width: 1, color: HarmonyTokens.glassHighlight() })
           .animation(undefined)
@@ -581,12 +585,12 @@ export struct RecorderPage {
           })
         }
         .width(148)
-        .height(112)
+        .height(VisualTheme.CONTROL_SLOT)
         .transition(MotionTheme.appear(this.reduceMotion))
       }
     }
     .width(224)
-    .height(112)
+    .height(VisualTheme.CONTROL_SLOT)
     .id('record-controls')
   }
 

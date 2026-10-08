@@ -1,4 +1,5 @@
 import { common } from '@kit.AbilityKit';
+import { VisualTheme } from '../utils/VisualTheme';
 import { accessibility } from '@kit.AccessibilityKit';
 import { DividerMode, HdsNavigation, HdsTabs, HdsTabsController } from '@kit.UIDesignKit';
 import { HarmonyPalette, HarmonyTheme, HarmonyTokens, ThemeMode, ThemeStore } from '../utils/HarmonyTheme';
@@ -162,7 +163,7 @@ struct Index {
       Stack() {
         Column()
           .width(52)
-          .height(44)
+          .height(VisualTheme.CONTROL_HEIGHT)
           .borderRadius(19)
           .backgroundColor(HarmonyTokens.primarySubtle())
           .animation(undefined)
@@ -171,12 +172,12 @@ struct Index {
           .animation(MotionTheme.state(this.reduceMotion))
           .hitTestBehavior(HitTestMode.None)
         SymbolGlyph(symbol)
-          .fontSize(24)
+          .fontSize(VisualTheme.ICON_TAB)
           .fontColor([this.isTabHighlighted(page) ? HarmonyTokens.primary() : HarmonyTokens.textSecondary()])
           .animation(MotionTheme.content(this.reduceMotion))
       }
       .width(64)
-      .height(44)
+      .height(VisualTheme.CONTROL_HEIGHT)
       .alignContent(Alignment.Center)
     }
     .width(Math.min(76, Math.max(48, (this.availableWidth - 48) / 3)))

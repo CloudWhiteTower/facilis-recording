@@ -419,18 +419,27 @@ export class RecordingService {
     if (this.pcmFile === undefined || this.pcmWriteFailure.length > 0) {
       throw new Error('PCM output file is unavailable.');
     }
+    const expected: audio.AudioStreamInfo = {
+      samplingRate: config.sampleRate === 44100 ? audio.AudioSamplingRate.SAMPLE_RATE_44100 :
+        audio.AudioSamplingRate.SAMPLE_RATE_48000,
+      channels: audio.AudioChannel.CHANNEL_1,
+      sampleFormat: config.bitDepth === 24 ? audio.AudioSampleFormat.SAMPLE_FORMAT_S24LE :
+        audio.AudioSampleFormat.SAMPLE_FORMAT_S16LE,
+      encodingType: audio.AudioEncodingType.ENCODING_TYPE_RAW
+    };
     const capturer = await audio.createAudioCapturer({
-      streamInfo: {
-        samplingRate: config.sampleRate === 44100 ? audio.AudioSamplingRate.SAMPLE_RATE_44100 :
-          audio.AudioSamplingRate.SAMPLE_RATE_48000,
-        channels: audio.AudioChannel.CHANNEL_1,
-        sampleFormat: config.bitDepth === 24 ? audio.AudioSampleFormat.SAMPLE_FORMAT_S24LE :
-          audio.AudioSampleFormat.SAMPLE_FORMAT_S16LE,
-        encodingType: audio.AudioEncodingType.ENCODING_TYPE_RAW
-      },
+      streamInfo: expected,
       capturerInfo: { source: audio.SourceType.SOURCE_TYPE_MIC, capturerFlags: 0 }
     });
+    // Retain ownership before querying so every failure still releases the handle.
+    // PCM headers and native encoders must describe the stream we actually receive,
+    // including when a new capturer is created after pause or an input-route change.
     this.pcmCapturer = capturer;
+    const actual = await capturer.getStreamInfo();
+    if (actual.samplingRate !== expected.samplingRate || actual.channels !== expected.channels ||
+      actual.sampleFormat !== expected.sampleFormat || actual.encodingType !== expected.encodingType) {
+      throw new Error('当前音频输入不支持所选录音质量，请切换采样率或位深后重试。');
+    }
     this.lastPcmPacketAt = this.monotonicNow();
     const callback = (buffer: ArrayBuffer): void => {
       if (this.pcmCapturer !== capturer || this.pcmFile === undefined ||

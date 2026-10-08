@@ -103,15 +103,31 @@ node scripts/test-playback-service.cjs '<DevEco Studio 安装目录>\tools\ohpm\
 | 入口 | 覆盖范围 | 结果 |
 | --- | --- | --- |
 | [test-ui-model.cjs](../scripts/test-ui-model.cjs) | 同步模型与主题资源检查；含格式配置、音频头、PCM 振幅、动效、缓存曲线等价性和横竖屏空间预算 | 59/59 |
-| [test-recording-service.cjs](../scripts/test-recording-service.cjs) | 两小时加速 PCM 流、背压、短写入、RIFF 边界、暂停继续、中途检查点、队列合并及采集停滞收尾 | 19/19 |
+| [test-recording-service.cjs](../scripts/test-recording-service.cjs) | 两小时加速 PCM 流、背压、短写入、RIFF 边界、暂停继续、中途检查点、队列合并、采集停滞及实际流参数/失败收尾 | 22/22 |
 | [test-recording-repository.cjs](../scripts/test-recording-repository.cjs) | 文件/索引事务、路径、损坏文件、容器参数、部分读写；批量扫描次数、期间新录音保存及批次刷新失败 | 37/37 |
 | [test-recording-actions.cjs](../scripts/test-recording-actions.cjs) | 真实页面方法的确认顺序、重复操作、删除保护、失败恢复、正常取消确认框及异步批次锁 | 13/13 |
 | [test-playback-service.cjs](../scripts/test-playback-service.cjs) | 加载替换、旧回调隔离、释放、音频打断、Seek、准备/控制超时与界面回调异常 | 37/37 |
 | [test-audio-conversion-service.cjs](../scripts/test-audio-conversion-service.cjs) | 参数、进度/取消、资源释放、登记失败保护，以及单调进度、重复通知抑制和服务复用 | 17/17 |
 
-合计 182/182。真实容器参数可通过 `node scripts/inspect-audio-files.cjs <typescript.js> <audio-file...>` 检查；该检查不会完整解码音频。独立流式解码与无损比较使用 `node scripts/verify-audio-streams.cjs <fixture-directory>`，需要本机 FFmpeg。
+合计 185/185。真实容器参数可通过 `node scripts/inspect-audio-files.cjs <typescript.js> <audio-file...>` 检查；该检查不会完整解码音频。独立流式解码与无损比较使用 `node scripts/verify-audio-streams.cjs <fixture-directory>`，需要本机 FFmpeg。
 
 脚本失败时返回非零退出码。Host 检查通过源码转译执行逻辑，不替代 ArkTS 编译、ArkUI 渲染或设备音频测试。其中“两小时”是加速数据流模拟，并非两小时设备录音；FLAC 桥接的调用顺序测试也不验证系统编码器生成的音频文件。
+
+另外，生产转换链路的 PCM 函数检查 5/5：遍历全部 16/24-bit 取值的 F32/S32 往返，覆盖满幅舍入、异常输入、块尾部与缓冲复用。Linux/WSL 中可在仓库根目录编译运行，无需 HarmonyOS 运行时：
+
+```sh
+mkdir -p .codex
+c++ -std=c++17 -O2 -Wall -Wextra -Werror -fsanitize=address,undefined -fno-omit-frame-pointer scripts/test-native-pcm.cpp -o .codex/test-native-pcm
+./.codex/test-native-pcm
+```
+
+独立报告工具检查 4/4，需要 FFmpeg/ffprobe 在 PATH 中；生成的临时夹具在检查结束后清理：
+
+```text
+node scripts/test-audio-stream-validator.cjs
+```
+
+这两组检查分别验证软件表示精度和报告工具，不替代真机编码器或麦克风质量测试。
 
 ### HarmonyOS 测试模块
 
@@ -125,7 +141,7 @@ devecocli build --modules entry@ohosTest
 
 ## 验证状态
 
-2026-10-08 v3：Host 182/182，Debug、Release、测试包构建通过，版本为 3.0.0 / 3000000。包含原生左右滑动、统一的竖屏布局、横屏高度适配及录音标题移除；最新包的真机覆盖安装、手势和音频验证等待平板解锁，后续结果以 [v3 验证记录](../docs/V3_OPTIMIZATION.md)为准。
+2026-10-08 v3：Host 185/185，PCM 精度/内存检查 5/5，独立报告工具检查 4/4，Debug、Release、测试包构建通过，版本为 3.0.0 / 3000000。包含原生左右滑动、统一的竖屏布局、横屏高度适配、字体/控件共同尺度、录音标题移除及实际 PCM 采集参数核对；最新包的真机覆盖安装、手势和音频验证等待平板解锁，后续结果以 [v3 验证记录](../docs/V3_OPTIMIZATION.md)为准。
 
 2026-09-27 功能回归：Debug、Release、ohosTest 构建通过，Host 166/166；API 24 平板模拟器 67/67（52 单元、10 FLAC 集成、5 转换集成）通过。15 个文件（11 个转换输出、4 个输入样本）由 FFmpeg 完整解码，5 组 PCM 逐样点一致。WAV、FLAC、M4A 既有录音的隔离副本均通过头/中/尾服务播放；系统文件选择器保存的 FLAC 副本与原件 SHA-256 一致。
 

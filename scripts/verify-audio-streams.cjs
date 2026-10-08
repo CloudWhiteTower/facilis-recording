@@ -11,8 +11,12 @@ async function inspect(name) {
   const probe = spawnSync('ffprobe', ['-v', 'error', '-show_streams', '-of', 'json', file],
     { encoding: 'utf8', windowsHide: true });
   const stream = probe.status === 0 ? JSON.parse(probe.stdout).streams.find(item => item.codec_type === 'audio') : undefined;
+  const sampleRate = Number(stream?.sample_rate), channels = Number(stream?.channels);
+  const bitDepth = Number(stream?.bits_per_raw_sample || stream?.bits_per_sample) || 32;
+  const positiveFullScale = 1 - 2 ** (1 - Math.min(bitDepth, 32));
   const hash = crypto.createHash('sha256');
-  let carry = Buffer.alloc(0), samples = 0, square = 0, peak = 0, error = '';
+  let carry = Buffer.alloc(0), samples = 0, square = 0, sum = 0, peak = 0, error = '';
+  let nonzeroSamples = 0, fullScaleSamples = 0;
   const child = spawn('ffmpeg', ['-v', 'error', '-nostdin', '-err_detect', 'explode', '-i', file,
     '-map', '0:a:0', '-c:a', 'pcm_s32le', '-f', 's32le', 'pipe:1'], { windowsHide: true });
   child.stdout.on('data', chunk => {
@@ -21,7 +25,9 @@ async function inspect(name) {
     const length = bytes.length - bytes.length % 4;
     for (let offset = 0; offset < length; offset += 4) {
       const value = bytes.readInt32LE(offset) / 2147483648;
-      square += value * value; peak = Math.max(peak, Math.abs(value)); samples++;
+      square += value * value; sum += value; peak = Math.max(peak, Math.abs(value)); samples++;
+      if (value !== 0) nonzeroSamples++;
+      if (value <= -1 || value >= positiveFullScale) fullScaleSamples++;
     }
     carry = Buffer.from(bytes.subarray(length));
   });
@@ -29,10 +35,13 @@ async function inspect(name) {
   const status = await new Promise((resolve, reject) => {
     child.on('error', reject); child.on('close', resolve);
   });
-  return { name, valid: probe.status === 0 && status === 0 && samples > 0 && carry.length === 0,
-    sampleRate: Number(stream?.sample_rate), channels: stream?.channels, decodedSamples: samples,
-    durationMs: samples * 1000 / Number(stream?.sample_rate), peak,
-    rms: samples ? Math.sqrt(square / samples) : 0, pcmSha256: hash.digest('hex'),
+  return { name, valid: probe.status === 0 && status === 0 && samples > 0 && carry.length === 0 &&
+      Number.isFinite(sampleRate) && sampleRate > 0 && Number.isInteger(channels) && channels > 0 && samples % channels === 0,
+    sampleRate, channels, decodedSamples: samples, decodedFrames: samples / channels,
+    durationMs: samples * 1000 / (sampleRate * channels), peak,
+    rms: samples ? Math.sqrt(square / samples) : 0, dcOffset: samples ? sum / samples : 0,
+    nonzeroSamples, fullScaleSamples, fullScaleFraction: samples ? fullScaleSamples / samples : 0,
+    pcmSha256: hash.digest('hex'),
     ...(error.trim() ? { error: error.trim() } : {}) };
 }
 
@@ -46,7 +55,7 @@ async function inspect(name) {
   const compare = (source, output) => {
     const a = byName.get(source), b = byName.get(output);
     comparisons.push({ source, output, pcmBitExact: !!a?.valid && !!b?.valid && a.pcmSha256 === b.pcmSha256 &&
-      a.decodedSamples === b.decodedSamples });
+      a.decodedSamples === b.decodedSamples && a.sampleRate === b.sampleRate && a.channels === b.channels });
   };
   for (const rate of [44100, 48000]) {
     const stress = results.find(item => item.name.startsWith(`stream_${rate}_`) && item.name !== 'stream_48000_14400000.wav');

@@ -1,4 +1,5 @@
 import { common } from '@kit.AbilityKit';
+import { TextRole, VisualTheme } from '../utils/VisualTheme';
 import { BusinessError } from '@kit.BasicServicesKit';
 import {
   HdsNavDestination,
@@ -244,22 +245,21 @@ export struct PlayerPage {
       .height(this.isCompactLandscape ? 88 : this.isSplitLayout ? 164 : 136)
 
       Text(this.displayName)
-        .fontSize(this.isCompactLandscape ? 22 : this.isSplitLayout ? 32 : 27)
-        .fontWeight(FontWeight.Medium)
+        .attributeModifier(VisualTheme.text(this.isCompactLandscape ? TextRole.HERO_COMPACT :
+          this.isSplitLayout ? TextRole.HERO_WIDE : TextRole.HERO))
         .fontColor(HarmonyTokens.textPrimary())
         .maxLines(2)
         .textOverflow({ overflow: TextOverflow.Ellipsis })
       Row({ space: 10 }) {
         Text(this.recording.config.formatLabel)
-          .fontSize(14)
-          .fontWeight(FontWeight.Medium)
+          .attributeModifier(VisualTheme.text(TextRole.METADATA, true))
           .fontColor(HarmonyTokens.primary())
         Text(this.qualityTitle())
-          .fontSize(14)
+          .attributeModifier(VisualTheme.text(TextRole.METADATA))
           .fontColor(HarmonyTokens.textSecondary())
       }
       Text(`${TimeUtils.formatDateTime(this.recording.createdAt)} · ${FileSizeUtils.format(this.recording.sizeBytes)}`)
-        .fontSize(13)
+        .attributeModifier(VisualTheme.text(TextRole.METADATA))
         .fontColor(HarmonyTokens.textTertiary())
     }
     .width('100%')
@@ -272,7 +272,7 @@ export struct PlayerPage {
     Column({ space: 12 }) {
       if (this.status.length > 0) {
         Text(this.status)
-          .fontSize(13)
+          .attributeModifier(VisualTheme.text(TextRole.METADATA))
           .fontColor(HarmonyTokens.textSecondary())
           .width('100%')
           .textAlign(TextAlign.Center)
@@ -280,6 +280,8 @@ export struct PlayerPage {
       }
       if (!this.isReady && !this.isPreparing && this.recording.filePath.length > 0) {
         Button('重新打开录音')
+          .height(VisualTheme.CONTROL_HEIGHT)
+          .fontSize(VisualTheme.BODY_SIZE)
           .enabled(!this.isWorking && !this.isConfirming)
           .onClick((): void => {
             this.preparePlayback();
@@ -304,11 +306,11 @@ export struct PlayerPage {
 
       Row() {
         Text(TimeUtils.formatDuration(this.positionMs))
-          .fontSize(13)
+          .attributeModifier(VisualTheme.text(TextRole.METADATA, false, true))
           .fontColor(HarmonyTokens.textSecondary())
         Blank()
         Text(TimeUtils.formatDuration(this.durationMs))
-          .fontSize(13)
+          .attributeModifier(VisualTheme.text(TextRole.METADATA, false, true))
           .fontColor(HarmonyTokens.textSecondary())
       }
       .width('100%')
@@ -323,21 +325,21 @@ export struct PlayerPage {
       Column() {
         Blank()
       }
-      .width(98)
-      .height(92)
+      .width(VisualTheme.PRIMARY_PLATE)
+      .height(VisualTheme.PRIMARY_PLATE)
       .attributeModifier(MaterialTheme.surface(MaterialRole.CONTROL, this.themeMode))
-      .borderRadius(46)
+      .borderRadius(VisualTheme.PRIMARY_PLATE / 2)
 
       Button() {
         Stack({ alignContent: Alignment.Center }) {
           if (this.isPlaying) {
             SymbolGlyph($r('sys.symbol.pause_fill'))
-              .fontSize(28)
+              .fontSize(VisualTheme.ICON_PRIMARY)
               .fontColor([HarmonyTokens.onPrimary()])
               .transition(MotionTheme.appear(this.reduceMotion))
           } else {
             SymbolGlyph($r('sys.symbol.play_fill'))
-              .fontSize(28)
+              .fontSize(VisualTheme.ICON_PRIMARY)
               .fontColor([HarmonyTokens.onPrimary()])
               .transition(MotionTheme.appear(this.reduceMotion))
           }
@@ -345,10 +347,10 @@ export struct PlayerPage {
         .width(32)
         .height(32)
       }
-      .width(72)
-      .height(72)
+      .width(VisualTheme.PRIMARY_BUTTON)
+      .height(VisualTheme.PRIMARY_BUTTON)
       .backgroundColor(HarmonyTokens.primary())
-      .borderRadius(36)
+      .borderRadius(VisualTheme.PRIMARY_BUTTON / 2)
       .enabled(this.isReady && !this.isWorking && !this.isConfirming)
       .animation(undefined)
       .attributeModifier(PressFeedback.button(this.themeMode, this.reduceMotion, true))
@@ -360,7 +362,7 @@ export struct PlayerPage {
       })
     }
     .width(148)
-    .height(this.isCompactLandscape ? 96 : 116)
+    .height(this.isCompactLandscape ? VisualTheme.COMPACT_CONTROL_SLOT : VisualTheme.CONTROL_SLOT)
     .margin({ bottom: this.isSplitLayout ? 0 : 20 })
     .id('player-controls')
   }
@@ -382,8 +384,7 @@ export struct PlayerPage {
         } else {
         Text(this.isRenaming ? '重命名' : this.recording.displayName)
           .width('100%')
-          .fontSize(20)
-          .fontWeight(FontWeight.Bold)
+          .attributeModifier(VisualTheme.text(TextRole.TITLE, true))
           .fontColor(HarmonyTokens.textPrimary())
           .maxLines(1)
           .textOverflow({ overflow: TextOverflow.Ellipsis })
@@ -392,8 +393,8 @@ export struct PlayerPage {
         if (this.isRenaming) {
           TextInput({ text: this.renameValue, placeholder: '录音名称' })
             .width('100%')
-            .height(48)
-            .fontSize(16)
+            .height(VisualTheme.INPUT_HEIGHT)
+            .fontSize(VisualTheme.BODY_SIZE)
             .fontColor(HarmonyTokens.textPrimary())
             .placeholderColor(HarmonyTokens.textTertiary())
             .backgroundColor(HarmonyTokens.surfaceSubtle())
@@ -462,17 +463,17 @@ export struct PlayerPage {
     Button() {
       Row({ space: 14 }) {
         SymbolGlyph(symbol)
-          .fontSize(21)
+          .fontSize(VisualTheme.ICON_TOOL)
           .fontColor([danger ? HarmonyTokens.danger() : HarmonyTokens.primary()])
         Text(title)
-          .fontSize(16)
+          .attributeModifier(VisualTheme.text(TextRole.BODY))
           .fontColor(danger ? HarmonyTokens.danger() : HarmonyTokens.textPrimary())
         Blank()
       }
       .width('100%')
     }
     .width('100%')
-    .height(52)
+    .height(VisualTheme.ACTION_HEIGHT)
     .padding({ left: 16, right: 16 })
     .backgroundColor(danger ? HarmonyTokens.dangerSubtle() : HarmonyTokens.surfaceSubtle())
     .borderRadius(16)
@@ -488,11 +489,11 @@ export struct PlayerPage {
   private sheetIconButton(symbol: Resource, label: string, primary: boolean, action: () => void) {
     Button() {
       SymbolGlyph(symbol)
-        .fontSize(20)
+        .fontSize(VisualTheme.ICON_TOOL)
         .fontColor([primary ? HarmonyTokens.onPrimary() : HarmonyTokens.textSecondary()])
     }
     .layoutWeight(1)
-    .height(44)
+    .height(VisualTheme.CONTROL_HEIGHT)
     .backgroundColor(primary ? HarmonyTokens.primary() : HarmonyTokens.surfaceSubtle())
     .borderRadius(18)
     .enabled(!this.isWorking && !this.isConfirming)

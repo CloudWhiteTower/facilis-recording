@@ -18,7 +18,8 @@ function environment() {
     fsyncFails: false, deleteFails: false, bgStartFails: false, blocked: false, unblock: null,
     backgroundCancel: null, pcmMaximum: 0, queueMaximum: 0, amplitude: 0,
     cancelDuringStart: false, cancelDuringPause: false, flacCalls: [], nativeFd: -1,
-    flacCreateFails: false, flacFinishFails: false, stopFailures: 0, releaseFailures: 0, writeCalls: 0 };
+    flacCreateFails: false, flacFinishFails: false, stopFailures: 0, releaseFailures: 0, writeCalls: 0,
+    streamOverride: null, streamInfoFails: false, capturers: [] };
   const recordFile = fd => {
     const handle = descriptors.get(fd);
     assert.ok(handle, 'file descriptor is open');
@@ -86,11 +87,15 @@ function environment() {
     AudioChannel: { CHANNEL_1: 1 }, AudioSampleFormat: { SAMPLE_FORMAT_S16LE: 16, SAMPLE_FORMAT_S24LE: 24 },
     AudioEncodingType: { ENCODING_TYPE_RAW: 0 }, SourceType: { SOURCE_TYPE_MIC: 0 },
     InterruptHint: { INTERRUPT_HINT_NONE: 0, INTERRUPT_HINT_RESUME: 1 },
-    async createAudioCapturer() {
+    async createAudioCapturer(options) {
       const listeners = new Map();
-      const capturer = { running: false,
+      const capturer = { running: false, released: false, starts: 0,
+        async getStreamInfo() {
+          if (state.streamInfoFails) throw new Error('injected stream-info query failure');
+          return { ...options.streamInfo, ...state.streamOverride };
+        },
         on(name, fn) { listeners.set(name, fn); }, off(name) { listeners.delete(name); },
-        async start() { if (!this.running) state.activeMic++; this.running = true; },
+        async start() { this.starts++; if (!this.running) state.activeMic++; this.running = true; },
         async stop() {
           if (state.stopFailures > 0) { state.stopFailures--; throw new Error('injected capturer stop failure'); }
           if (this.running) state.activeMic--;
@@ -104,11 +109,13 @@ function environment() {
           if (state.releaseFailures > 0) { state.releaseFailures--; throw new Error('injected capturer release failure'); }
           if (this.running) state.activeMic--;
           this.running = false;
+          this.released = true;
         },
         emit(bytes) { if (this.running) listeners.get('readData')?.(bytes); },
         interrupt() { listeners.get('audioInterrupt')?.({ hintType: 2 }); }
       };
       state.capturer = capturer;
+      state.capturers.push(capturer);
       return capturer;
     }
   };
@@ -188,12 +195,39 @@ function environment() {
   }
   return { state, files, saved, notices, service, config: RecordingConfig, states: RecordingState, feed, settled,
     tick() { for (const callback of [...timers.values()]) callback(); },
-    assertReleased() { assert.equal(state.activeMic, 0); assert.equal(state.bgActive, false); assert.equal(descriptors.size, 0); }
+    assertReleased() {
+      assert.equal(state.activeMic, 0); assert.equal(state.bgActive, false); assert.equal(descriptors.size, 0);
+      assert.ok(state.capturers.every(capturer => capturer.released), 'every created capturer was released');
+    }
   };
 }
 
 async function test(name, fn) { await fn(); passed++; console.log(`PASS ${name}`); }
 (async () => {
+  await test('negotiated rate, channels, bit depth and encoding must match before PCM capture starts', async () => {
+    for (const override of [{ samplingRate: 44100 }, { channels: 2 }, { sampleFormat: 16 }, { encodingType: 1 }]) {
+      const e = environment(); e.state.streamOverride = override;
+      await assert.rejects(e.service.start({}, e.config.wav(48000, 24)), /不支持所选录音质量/);
+      assert.equal(e.state.capturer.starts, 0); assert.equal(e.saved.length, 0);
+      assert.equal(e.files.size, 0); assert.equal(e.service.getState(), e.states.IDLE); e.assertReleased();
+    }
+  });
+  await test('stream-info query failure releases the prepared capturer and empty WAV or FLAC output', async () => {
+    for (const config of [e => e.config.wav(), e => e.config.flac()]) {
+      const e = environment(); e.state.streamInfoFails = true;
+      await assert.rejects(e.service.start({}, config(e)), /stream-info query failure/);
+      assert.equal(e.state.capturer.starts, 0); assert.equal(e.files.size, 0);
+      assert.equal(e.saved.length, 0); e.assertReleased();
+    }
+  });
+  await test('an input-format change on resume saves only the previously recorded, valid PCM prefix', async () => {
+    const e = environment(); await e.service.start({}, e.config.wav()); await e.feed(new ArrayBuffer(9600));
+    await e.service.pause(); e.state.streamOverride = { samplingRate: 44100 };
+    await assert.rejects(e.service.resume(), /不支持所选录音质量/); await e.settled();
+    assert.equal(e.state.capturer.starts, 0); assert.equal(e.saved.length, 1);
+    assert.equal(e.saved[0].sizeBytes, 44 + 9600); assert.equal(e.saved[0].durationMs, 100);
+    assert.equal(e.service.getState(), e.states.STOPPED); e.assertReleased();
+  });
   await test('periodic WAV checkpoints expose only complete, even sample prefixes before stop', async () => {
     const e = environment(); await e.service.start({}, e.config.wav(48000, 24));
     for (let index = 0; index < 5; index++) await e.feed(new ArrayBuffer(144000));
