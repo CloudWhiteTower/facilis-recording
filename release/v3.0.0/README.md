@@ -4,6 +4,9 @@ v3 优化连续波形、资料库批量操作、录音故障恢复、播放控�
 
 ## 更新内容
 
+- 开启原生左右滑动切换录制、资料库和设置，录音期间保留导航保护。
+- 手机和平板竖屏统一纵向排布与底部页签宽度；横屏分栏，按高度适配波形、播放图形、标题栏和质量面板。
+- 去掉录音页左上角的标题及其占位空间，保留计时、格式和图标无障碍名称。
 - 波形曲线、渐变、边框路径和资料库分组缓存，减少逐帧和重复页面更新的工作量。
 - PCM 队列合并写入；WAV 定期更新文件头，暂停时保存检查点；采集停滞时尝试保存可用部分。
 - 转换缓冲区复用、完整 AAC 帧直接提交和编解码批次调度，保留无损精度与末尾样点。
@@ -15,13 +18,13 @@ v3 优化连续波形、资料库批量操作、录音故障恢复、播放控�
 
 ## 附件
 
-[GitHub Release](https://github.com/CloudWhiteTower/facilis-recording/releases/tag/v3.0.0) 提供：
+附件已上传至维护者可见的 GitHub 发行草稿，代码与验证进度见 [PR #2](https://github.com/CloudWhiteTower/facilis-recording/pull/2)。最终发行版待真机验证后公开；附件包括：
 
 | 附件 | 用途 |
 | --- | --- |
 | `facilis-recording-v3.0.0-release-unsigned.hap` | 未签名 Release 模块，需要开发者自己的证书与 Profile 签名后安装 |
 | `facilis-recording-v3.0.0-release-unsigned-app.zip` | 内含完整未签名 `.app`，供后续签名、分发使用 |
-| `facilis-recording-v3.0.0-source.zip` | 与发布标签一致的源码、测试和文档 |
+| `facilis-recording-v3.0.0-source.zip` | 与发布提交一致的源码、测试和文档 |
 | `SHA256SUMS.txt` | 上述三个附件的 SHA-256 校验值 |
 
 公开包不包含本地调试证书、设备 Profile 或用户录音。未签名 HAP 不能直接点击安装；GitHub 发布不代表已经上架 AppGallery。覆盖升级需兼容签名，应先导出重要录音，勿以卸载旧应用解决签名冲突。

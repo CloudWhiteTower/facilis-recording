@@ -13,6 +13,15 @@ function delay(ms: number): Promise<void> {
   return new Promise((resolve: () => void): void => { setTimeout(resolve, ms); });
 }
 
+async function swipePrimaryPage(driver: Driver, forward: boolean): Promise<void> {
+  const bounds = await (await driver.waitForComponent(ON.id('primary-tabs'), 5000)).getBounds();
+  const left = Math.round(bounds.left + (bounds.right - bounds.left) * 0.2);
+  const right = Math.round(bounds.left + (bounds.right - bounds.left) * 0.8);
+  const middle = Math.round(bounds.top + (bounds.bottom - bounds.top) * 0.45);
+  await driver.swipe(forward ? right : left, middle, forward ? left : right, middle, 1200);
+  await delay(700);
+}
+
 function writeAll(fd: number, data: ArrayBuffer): void {
   let offset = 0;
   while (offset < data.byteLength) {
@@ -201,11 +210,24 @@ export default function deviceIntegrationTest() {
           for (const rotation of [DisplayRotation.ROTATION_0, DisplayRotation.ROTATION_90]) {
             await driver.setDisplayRotation(rotation);
             await delay(1500);
+            await (await driver.waitForComponent(ON.id('tab-0'), 5000)).click();
+            await delay(500);
             expect(await driver.screenCap(`${screenshots}/facilis-recorder-${rotation}.png`)).assertTrue();
             const button = await driver.findComponent(ON.id('record-start'));
             expect(button !== null).assertTrue();
             const quality = await driver.findComponent(ON.id('record-quality'));
             expect(quality !== null).assertTrue();
+            const stage = await (await driver.findComponent(ON.id('recording-stage'))).getBounds();
+            const controls = await (await driver.findComponent(ON.id('record-controls'))).getBounds();
+            const viewport = await (await driver.findComponent(ON.id('primary-tabs'))).getBounds();
+            const tab = await (await driver.findComponent(ON.id('tab-0'))).getBounds();
+            expect(stage.top >= viewport.top && stage.bottom <= viewport.bottom).assertTrue();
+            expect(controls.top >= viewport.top && controls.bottom <= viewport.bottom).assertTrue();
+            expect(controls.bottom <= tab.top).assertTrue();
+            if (viewport.right - viewport.left <= viewport.bottom - viewport.top) {
+              expect(controls.top >= stage.bottom).assertTrue();
+            }
+            expect(await driver.findComponent(ON.text('录音')) === null).assertTrue();
             await quality.click();
             await delay(700);
             expect(await driver.screenCap(`${screenshots}/facilis-quality-${rotation}.png`)).assertTrue();
@@ -213,6 +235,33 @@ export default function deviceIntegrationTest() {
           }
         } finally {
           await driver.setDisplayRotation(original);
+        }
+      });
+
+      it('swipes between all primary pages and back in both display orientations', 0, async () => {
+        const delegator = abilityDelegatorRegistry.getAbilityDelegator();
+        await delegator.startAbility({ bundleName: 'com.example.harmonyrecorder', abilityName: 'EntryAbility' });
+        const driver = Driver.create();
+        const original = await driver.getDisplayRotation();
+        try {
+          for (const rotation of [DisplayRotation.ROTATION_0, DisplayRotation.ROTATION_90]) {
+            await driver.setDisplayRotation(rotation);
+            await delay(1500);
+            await (await driver.waitForComponent(ON.id('tab-0'), 5000)).click();
+            await delay(500);
+            await swipePrimaryPage(driver, true);
+            expect(await driver.waitForComponent(ON.id('recordings-list'), 5000) !== null).assertTrue();
+            await swipePrimaryPage(driver, true);
+            expect(await driver.waitForComponent(ON.id('settings-appearance'), 5000) !== null).assertTrue();
+            expect(await driver.screenCap(`${delegator.getAppContext().cacheDir}/facilis-swipe-${rotation}.png`)).assertTrue();
+            await swipePrimaryPage(driver, false);
+            expect(await driver.waitForComponent(ON.id('recordings-list'), 5000) !== null).assertTrue();
+            await swipePrimaryPage(driver, false);
+            expect(await driver.waitForComponent(ON.id('record-start'), 5000) !== null).assertTrue();
+          }
+        } finally {
+          await driver.setDisplayRotation(original);
+          await (await driver.waitForComponent(ON.id('tab-0'), 5000)).click();
         }
       });
     });

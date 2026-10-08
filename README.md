@@ -22,6 +22,7 @@
 - 格式转换：WAV、FLAC、M4A 在应用内转换，支持进度和取消并保留原件；范围为 44.1/48 kHz、单声道，FLAC 目标限 16-bit。
 - 播放：播放/暂停、进度显示和 Seek，处理音频打断、输出设备断开及加载错误。
 - 外观：橙色主色、磨砂材质、交互高光与 HDS 浮动底栏，支持浅色/深色及手机和平板响应式布局。
+- 页面切换：可左右滑动或点击底部图标；录音和播放的竖屏布局统一，横屏按宽高与可用空间分栏。录音页隐藏文字标题，保留必要的质量、计时和无障碍名称。
 - 后台录音：用户开始录音后申请系统录音长时任务，暂停或结束时释放，并显示系统通知。
 - 隐私：声明麦克风与后台运行权限，不包含网络权限或第三方运行时 SDK，录音默认保存在应用私有目录。
 
@@ -60,9 +61,9 @@ devecocli build --product default --build-mode release
 
 ## 下载与发布状态
 
-- [v3.0.0 GitHub Release](https://github.com/CloudWhiteTower/facilis-recording/releases/tag/v3.0.0) 提供未签名 Release HAP、ZIP 封装的未签名 Release APP、源码归档及 SHA-256 校验文件，详见[附件说明](release/v3.0.0/README.md)。
+- v3 代码已上传至 [PR #2](https://github.com/CloudWhiteTower/facilis-recording/pull/2)，安装包、源码归档及 SHA-256 清单已上传至维护者可见的发行草稿。最终发行版待真机验证后公开，详见[附件说明](release/v3.0.0/README.md)。
 - **公开 HAP 需由开发者签名后安装**。附件不包含本地调试证书或设备 Profile；GitHub 发布不代表已通过 AppGallery 审核或上架。
-- v3 Host 回归 178/178，覆盖录音、转换、播放、文件操作和波形模型。当前设备与独立解码结果见 [v3 验证](docs/V3_OPTIMIZATION.md)；v2 的模拟器验证保留在[历史音频记录](data/audio-functional-validation/README.md)。
+- v3 Host 回归 182/182，覆盖录音、转换、播放、文件操作、波形和横竖屏布局模型。当前设备与独立解码结果见 [v3 验证](docs/V3_OPTIMIZATION.md)；v2 的模拟器验证保留在[历史音频记录](data/audio-functional-validation/README.md)。
 - HiSmartPerf 帧时间、功耗、锁屏策略和扬声器/耳机主观听感仍待专门验收；加速测试不计作真实设备长录音。
 
 正式上架还需要开发者本人完成账号实名、APP ID/最终包名确认、发布签名、版权/备案材料和 AGC 提交。逐项状态见 [AppGallery 发布清单](docs/APPGALLERY_RELEASE.md)。

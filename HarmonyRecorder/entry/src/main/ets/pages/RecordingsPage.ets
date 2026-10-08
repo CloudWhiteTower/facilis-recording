@@ -136,7 +136,8 @@ export struct RecordingsPage {
       enableComponentSafeArea: true
     })
     .mode(NavigationMode.Stack)
-    .titleMode(HdsNavigationTitleMode.FULL)
+    .titleMode(ResponsiveLayout.usesSplitLayout(this.availableWidth, this.availableHeight) ?
+      HdsNavigationTitleMode.MINI : HdsNavigationTitleMode.FULL)
     .hideBackButton(true)
     .backgroundColor(HarmonyTokens.pageBackground())
     .onAreaChange((oldValue: Area, newValue: Area): void => {
@@ -392,7 +393,8 @@ export struct RecordingsPage {
         ListItem() {
           this.emptyState()
         }
-        .height(this.isWide ? 300 : 240)
+        .height(ResponsiveLayout.usesSplitLayout(this.availableWidth, this.availableHeight) ?
+          Math.min(240, Math.max(160, this.availableHeight - 240)) : 240)
         .transition(MotionTheme.appear(this.reduceMotion))
       }
 
@@ -405,6 +407,7 @@ export struct RecordingsPage {
     }
     .width(ResponsiveLayout.contentWidth(this.isWide))
       .constraintSize({ maxWidth: 920 })
+    .id('recordings-list')
     .layoutWeight(1)
     .padding({
       left: ResponsiveLayout.horizontalPadding(this.isWide),

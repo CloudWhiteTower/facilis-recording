@@ -1,5 +1,5 @@
 import { common } from '@kit.AbilityKit';
-import { HdsNavigation, HdsNavigationTitleMode } from '@kit.UIDesignKit';
+import { HdsNavigation } from '@kit.UIDesignKit';
 import { LiveWaveform } from '../components/LiveWaveform';
 import { StageEdgeLight } from '../components/StageEdgeLight';
 import { RecordingConfig, RecordingFormat, RecordingSnapshot, RecordingState } from '../models/RecordingTypes';
@@ -190,6 +190,8 @@ export struct RecorderPage {
   @State private notice: string = '';
   @State private isWorking: boolean = false;
   @State private isWide: boolean = false;
+  @State private isSplitLayout: boolean = false;
+  @State private availableWidth: number = 360;
   @State private contentHeight: number = 640;
   @State private stageHeight: number = 0;
   @State private showFormatSheet: boolean = false;
@@ -235,7 +237,7 @@ export struct RecorderPage {
     HdsNavigation() {
       Scroll() {
         Column() {
-          if (this.isWide) {
+          if (this.isSplitLayout) {
             Row({ space: 24 }) {
               Column() {
                 this.recordingStage()
@@ -255,21 +257,20 @@ export struct RecorderPage {
             }
             .width(ResponsiveLayout.contentWidth(true))
             .constraintSize({ maxWidth: 1100 })
-            .height(Math.max(this.contentHeight, 520))
+            .height(ResponsiveLayout.recorderContentHeight(this.contentHeight, true, this.notice.length > 0))
             .padding({ left: 24, right: 24, top: 16, bottom: 104 })
             .alignItems(VerticalAlign.Center)
           } else {
             Column({ space: 16 }) {
-              Blank().layoutWeight(1)
               this.recordingStage()
               this.recordingFooter()
               if (this.notice.length > 0) {
                 this.noticeText()
               }
-              Blank().layoutWeight(1)
             }
             .width('100%')
-            .height(Math.max(this.contentHeight, this.notice.length > 0 ? 620 : 560))
+            .constraintSize({ maxWidth: 720 })
+            .height(ResponsiveLayout.recorderContentHeight(this.contentHeight, false, this.notice.length > 0))
             .padding({ left: 16, right: 16, top: 8, bottom: 104 })
             .justifyContent(FlexAlign.Center)
             .alignItems(HorizontalAlign.Center)
@@ -281,31 +282,24 @@ export struct RecorderPage {
       .height('100%')
       .scrollBar(BarState.Auto)
       .onAreaChange((oldArea: Area, area: Area): void => {
+        const width = Number(area.width);
         const height = Number(area.height);
-        if (Number.isFinite(height) && Math.abs(height - this.contentHeight) >= 1) {
+        if (Number.isFinite(width) && width > 0 && Math.abs(width - this.availableWidth) >= 1) {
+          this.availableWidth = width;
+          this.isWide = ResponsiveLayout.isWide(width);
+        }
+        if (Number.isFinite(height) && height > 0 && Math.abs(height - this.contentHeight) >= 1) {
           this.contentHeight = height;
         }
+        this.isSplitLayout = ResponsiveLayout.usesSplitLayout(this.availableWidth, this.contentHeight);
       })
     }
     .width('100%')
     .height('100%')
-    .titleBar({
-      content: {
-        title: { mainTitle: '录音' }
-      },
-      style: {
-        scrollEffectOpts: { enableScrollEffect: false },
-        systemMaterialEffect: MaterialTheme.resolve(MaterialRole.NAVIGATION)
-      },
-      enableComponentSafeArea: true
-    })
+    .hideTitleBar(true)
     .mode(NavigationMode.Stack)
-    .titleMode(HdsNavigationTitleMode.MINI)
     .hideBackButton(true)
     .backgroundColor(HarmonyTokens.pageBackground())
-    .onAreaChange((oldValue: Area, newValue: Area): void => {
-      this.isWide = ResponsiveLayout.isWide(newValue.width);
-    })
   }
 
   @Builder
@@ -322,7 +316,7 @@ export struct RecorderPage {
   @Builder
   private recordingStage() {
     Stack({ alignContent: Alignment.Center }) {
-      Column({ space: this.isWide ? 20 : 14 }) {
+      Column({ space: 14 }) {
         Row({ space: 8 }) {
           Stack({ alignContent: Alignment.Center }) {
             if (this.recordingState === RecordingState.RECORDING) {
@@ -352,7 +346,8 @@ export struct RecorderPage {
           accentColor: this.palette().primary,
           isVisible: this.isVisible,
           sampleIntervalMs: this.selectedFormat === RecordingFormat.M4A ? 120 : 90,
-          renderHeight: this.isWide ? 220 : 170
+          renderHeight: ResponsiveLayout.recorderWaveformHeight(this.contentHeight, this.isSplitLayout,
+            this.notice.length > 0)
         })
 
         Row({ space: 0 }) {
@@ -368,10 +363,10 @@ export struct RecorderPage {
       }
       .width('100%')
       .padding({
-        left: this.isWide ? 32 : 18,
-        right: this.isWide ? 32 : 18,
-        top: this.isWide ? 24 : 18,
-        bottom: this.isWide ? 22 : 16
+        left: 18,
+        right: 18,
+        top: 18,
+        bottom: 16
       })
       .attributeModifier(MaterialTheme.surface(MaterialRole.STAGE, this.themeMode))
       .borderRadius(28)
@@ -394,6 +389,7 @@ export struct RecorderPage {
         .hitTestBehavior(HitTestMode.None)
     }
     .width('100%')
+    .id('recording-stage')
     .radialGradient({
       center: ['18%', '12%'],
       radius: '110%',
@@ -434,7 +430,8 @@ export struct RecorderPage {
       this.showFormatSheet = true;
     })
     .bindSheet($$this.showFormatSheet, this.recordingSettingsSheet(), {
-      height: SheetSize.MEDIUM,
+      height: this.isWide ? Math.min(560, Math.max(180, this.contentHeight - 80)) : SheetSize.MEDIUM,
+      width: this.isWide ? Math.min(560, this.availableWidth - 48) : '100%',
       preferType: this.isWide ? SheetType.CENTER : SheetType.BOTTOM,
       dragBar: true,
       showClose: false,
@@ -541,7 +538,7 @@ export struct RecorderPage {
             this.stopRecording();
           })
         }
-        .width(this.isWide ? 220 : 224)
+        .width(224)
         .height(84)
         .padding({ left: 10, right: 10 })
         .justifyContent(FlexAlign.SpaceBetween)
@@ -552,8 +549,8 @@ export struct RecorderPage {
       } else {
         Stack({ alignContent: Alignment.Center }) {
           Column()
-            .width(this.isWide ? 110 : 104)
-            .height(this.isWide ? 110 : 104)
+            .width(104)
+            .height(104)
             .attributeModifier(MaterialTheme.surface(MaterialRole.CONTROL, this.themeMode))
             .borderRadius(55)
             .hitTestBehavior(HitTestMode.None)
@@ -562,15 +559,15 @@ export struct RecorderPage {
               .fontSize(30)
               .fontColor([HarmonyTokens.onPrimary()])
           }
-          .width(this.isWide ? 88 : 82)
-          .height(this.isWide ? 88 : 82)
+          .width(82)
+          .height(82)
           .backgroundColor(HarmonyTokens.primary())
           .radialGradient({
             center: ['30%', '15%'],
             radius: '110%',
             colors: [[HarmonyTokens.controlLight(), 0], [HarmonyTokens.primary(), 0.70]]
           })
-          .borderRadius(this.isWide ? 44 : 41)
+          .borderRadius(41)
           .clip(true)
           .border({ width: 1, color: HarmonyTokens.glassHighlight() })
           .animation(undefined)
@@ -590,6 +587,7 @@ export struct RecorderPage {
     }
     .width(224)
     .height(112)
+    .id('record-controls')
   }
 
   private confirmDiscardRecording(): void {

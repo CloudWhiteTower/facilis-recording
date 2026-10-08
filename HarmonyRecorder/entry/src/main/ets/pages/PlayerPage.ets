@@ -29,6 +29,8 @@ export struct PlayerPage {
   @State private status: string = '';
   @State private displayName: string = '';
   @State private isWide: boolean = false;
+  @State private isSplitLayout: boolean = false;
+  @State private isCompactLandscape: boolean = false;
   @State private availableWidth: number = 360;
   @State private availableHeight: number = 640;
   @State private isRenaming: boolean = false;
@@ -99,13 +101,13 @@ export struct PlayerPage {
       Stack({ alignContent: Alignment.Bottom }) {
         Scroll() {
           Column() {
-            if (this.availableWidth >= 840) {
-              Row({ space: 40 }) {
+            if (this.isSplitLayout) {
+              Row({ space: this.isCompactLandscape ? 24 : 40 }) {
                 Column() {
                   this.recordingOverview()
                 }
                 .layoutWeight(1)
-                Column({ space: 28 }) {
+                Column({ space: this.isCompactLandscape ? 16 : 28 }) {
                   this.playbackTimeline()
                   this.playerBar()
                 }
@@ -113,10 +115,10 @@ export struct PlayerPage {
               }
               .width('100%')
               .alignItems(VerticalAlign.Center)
-              .padding({ top: 36, bottom: 36 })
+              .padding({ top: this.isCompactLandscape ? 12 : 36, bottom: this.isCompactLandscape ? 12 : 36 })
             } else {
-              Column({ space: this.isWide ? 30 : 24 }) {
-                Blank().height(this.isWide ? 24 : 12)
+              Column({ space: 24 }) {
+                Blank().height(12)
                 this.recordingOverview()
                 Divider().color(HarmonyTokens.divider())
                 this.playbackTimeline()
@@ -126,7 +128,7 @@ export struct PlayerPage {
             }
           }
           .width(ResponsiveLayout.contentWidth(this.isWide))
-          .constraintSize({ maxWidth: this.availableWidth >= 840 ? 1120 : 720 })
+          .constraintSize({ maxWidth: this.isSplitLayout ? 1120 : 720 })
           .padding({
             left: ResponsiveLayout.horizontalPadding(this.isWide),
             right: ResponsiveLayout.horizontalPadding(this.isWide)
@@ -136,7 +138,7 @@ export struct PlayerPage {
         .height('100%')
         .scrollBar(BarState.Off)
 
-        if (this.availableWidth < 840) {
+        if (!this.isSplitLayout) {
           this.playerBar()
         }
       }
@@ -186,6 +188,8 @@ export struct PlayerPage {
       if (Number.isFinite(height) && height > 0 && Math.abs(height - this.availableHeight) >= 1) {
         this.availableHeight = height;
       }
+      this.isSplitLayout = ResponsiveLayout.usesSplitLayout(this.availableWidth, this.availableHeight);
+      this.isCompactLandscape = this.isSplitLayout && this.availableHeight < 520;
     })
     .bindSheet($$this.showActionSheet, this.actionsSheet(), {
       height: this.isWide ? Math.min(560, Math.max(180, this.availableHeight - 80)) : SheetSize.LARGE,
@@ -219,28 +223,28 @@ export struct PlayerPage {
 
   @Builder
   private recordingOverview() {
-    Column({ space: 12 }) {
+    Column({ space: this.isCompactLandscape ? 8 : 12 }) {
       Stack({ alignContent: Alignment.Center }) {
         Circle()
-          .width(this.isWide ? 180 : 150)
-          .height(this.isWide ? 180 : 150)
+          .width(this.isCompactLandscape ? 100 : this.isSplitLayout ? 180 : 150)
+          .height(this.isCompactLandscape ? 100 : this.isSplitLayout ? 180 : 150)
           .fill(HarmonyTokens.primaryGlow())
           .blur(38)
           .opacity(0.42)
         Column()
-          .width(this.isWide ? 116 : 96)
-          .height(this.isWide ? 116 : 96)
+          .width(this.isCompactLandscape ? 72 : this.isSplitLayout ? 116 : 96)
+          .height(this.isCompactLandscape ? 72 : this.isSplitLayout ? 116 : 96)
           .attributeModifier(MaterialTheme.surface(MaterialRole.CONTROL, this.themeMode))
-          .borderRadius(this.isWide ? 58 : 48)
+          .borderRadius(this.isCompactLandscape ? 36 : this.isSplitLayout ? 58 : 48)
         SymbolGlyph($r('sys.symbol.waveform'))
-          .fontSize(this.isWide ? 48 : 40)
+          .fontSize(this.isCompactLandscape ? 32 : this.isSplitLayout ? 48 : 40)
           .fontColor([HarmonyTokens.primary()])
       }
       .width('100%')
-      .height(this.isWide ? 164 : 136)
+      .height(this.isCompactLandscape ? 88 : this.isSplitLayout ? 164 : 136)
 
       Text(this.displayName)
-        .fontSize(this.isWide ? 32 : 27)
+        .fontSize(this.isCompactLandscape ? 22 : this.isSplitLayout ? 32 : 27)
         .fontWeight(FontWeight.Medium)
         .fontColor(HarmonyTokens.textPrimary())
         .maxLines(2)
@@ -260,6 +264,7 @@ export struct PlayerPage {
     }
     .width('100%')
     .alignItems(HorizontalAlign.Center)
+    .id('player-overview')
   }
 
   @Builder
@@ -309,6 +314,7 @@ export struct PlayerPage {
       .width('100%')
     }
     .width(this.contentFocusWidth())
+    .id('player-timeline')
   }
 
   @Builder
@@ -354,8 +360,9 @@ export struct PlayerPage {
       })
     }
     .width(148)
-    .height(116)
-    .margin({ bottom: this.isWide ? 30 : 20 })
+    .height(this.isCompactLandscape ? 96 : 116)
+    .margin({ bottom: this.isSplitLayout ? 0 : 20 })
+    .id('player-controls')
   }
 
   @Builder

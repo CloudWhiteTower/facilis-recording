@@ -6,6 +6,7 @@ import { MaterialRole, MaterialTheme } from '../utils/MaterialTheme';
 import { MotionTheme } from '../utils/MotionTheme';
 import { PressFeedback } from '../utils/PressFeedback';
 import { AppPage, NavigationStore } from '../utils/NavigationStore';
+import { ResponsiveLayout } from '../utils/ResponsiveLayout';
 import { PlayerPage } from './PlayerPage';
 import { RecorderPage } from './RecorderPage';
 import { RecordingsPage } from './RecordingsPage';
@@ -20,6 +21,7 @@ struct Index {
   @StorageLink(MotionTheme.REDUCE_KEY) private reduceMotion: boolean = false;
   @State private highlightedTab: number = 0;
   @State private availableWidth: number = 360;
+  @State private isLandscape: boolean = false;
   private readonly tabsController: HdsTabsController = new HdsTabsController();
   private readonly pageStack: NavPathStack = new NavPathStack();
   private motionObserverRegistered: boolean = false;
@@ -81,7 +83,8 @@ struct Index {
         .height('100%')
         .vertical(false)
         .barPosition(BarPosition.End)
-        .scrollable(false)
+        .scrollable(!this.isRecordingActive)
+        .id('primary-tabs')
         .barOverlap(true)
         .barHeight(64)
         .animationDuration(this.reduceMotion ? 0 : MotionTheme.TAB_DURATION_MS)
@@ -89,8 +92,8 @@ struct Index {
         .barFloatingStyle({
           barWidth: {
             smallWidth: Math.min(248, Math.max(180, this.availableWidth - 32)),
-            mediumWidth: Math.min(300, Math.max(180, this.availableWidth - 48)),
-            largeWidth: Math.min(360, Math.max(180, this.availableWidth - 64))
+            mediumWidth: Math.min(this.isLandscape ? 300 : 248, Math.max(180, this.availableWidth - 48)),
+            largeWidth: Math.min(this.isLandscape ? 360 : 248, Math.max(180, this.availableWidth - 64))
           },
           barBottomMargin: 16,
           gradientMask: {
@@ -127,6 +130,10 @@ struct Index {
       const width = Number(area.width);
       if (Number.isFinite(width) && width > 0 && Math.abs(width - this.availableWidth) >= 1) {
         this.availableWidth = width;
+      }
+      const height = Number(area.height);
+      if (Number.isFinite(width) && width > 0 && Number.isFinite(height) && height > 0) {
+        this.isLandscape = ResponsiveLayout.usesSplitLayout(width, height);
       }
     })
   }

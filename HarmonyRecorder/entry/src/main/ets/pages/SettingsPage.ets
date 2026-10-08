@@ -8,6 +8,7 @@ import { ResponsiveLayout } from '../utils/ResponsiveLayout';
 @Component
 export struct SettingsPage {
   @State private isWide: boolean = false;
+  @State private isLandscape: boolean = false;
   @StorageLink(ThemeStore.MODE_KEY) private themeMode: number = ThemeMode.LIGHT;
   @StorageLink(MotionTheme.REDUCE_KEY) private reduceMotion: boolean = false;
 
@@ -40,6 +41,7 @@ export struct SettingsPage {
           .padding(8)
           .attributeModifier(MaterialTheme.surface(MaterialRole.CONTROL, this.themeMode))
           .borderRadius(28)
+          .id('settings-appearance')
 
         }
         .width(ResponsiveLayout.contentWidth(this.isWide))
@@ -72,11 +74,14 @@ export struct SettingsPage {
       enableComponentSafeArea: true
     })
     .mode(NavigationMode.Stack)
-    .titleMode(HdsNavigationTitleMode.FULL)
+    .titleMode(this.isLandscape ? HdsNavigationTitleMode.MINI : HdsNavigationTitleMode.FULL)
     .hideBackButton(true)
     .backgroundColor(HarmonyTokens.pageBackground())
     .onAreaChange((oldValue: Area, newValue: Area): void => {
-      this.isWide = ResponsiveLayout.isWide(newValue.width);
+      const width = Number(newValue.width);
+      const height = Number(newValue.height);
+      this.isWide = ResponsiveLayout.isWide(width);
+      this.isLandscape = ResponsiveLayout.usesSplitLayout(width, height);
     })
   }
 
