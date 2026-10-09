@@ -1,0 +1,19 @@
+{
+  "date": "2026-10-09",
+  "baselineCommit": "c29981ab0bced4c337674d8e52fdab02eff9c17f",
+  "baselineVersion": "3.0.1",
+  "containsUnpublishedWorkingTreeFixes": true,
+  "host": { "run": 191, "pass": 191, "failure": 0, "newRecordingScenarios": 6 },
+  "builds": { "release": true, "ohosTest": true, "storeSigning": false },
+  "device": { "model": "MatePad Air", "physical": true },
+  "deviceTests": {
+    "run": 67, "pass": 67, "failure": 0, "error": 0, "elapsedMs": 33689,
+    "unit": 57, "conversion": 6, "streamingAndCancellation": 3,
+    "threeFormatMicrophoneTest": 1
+  },
+  "installation": { "overwrite": true, "uninstalled": false },
+  "existingLibraryPreserved": true,
+  "crashLogsFound": false,
+  "newLongRecordingOrLockScreenTest": false,
+  "storeSubmitted": false
+}

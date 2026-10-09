@@ -31,6 +31,7 @@ export class RecordingService {
   private readonly backgroundTask: BackgroundRecordingTask = new BackgroundRecordingTask();
 
   private avRecorder: media.AVRecorder | undefined = undefined;
+  private avRecorderGeneration: number = 0;
   private avFile: fileIo.File | undefined = undefined;
   private amplitudeTimerId: number = -1;
   private amplitudeReadPromise: Promise<void> | undefined = undefined;
@@ -349,10 +350,27 @@ export class RecordingService {
     }
     this.avFile = fileIo.openSync(this.activeRecording.filePath,
       fileIo.OpenMode.READ_WRITE | fileIo.OpenMode.CREATE | fileIo.OpenMode.TRUNC);
+    const generation = ++this.avRecorderGeneration;
     const recorder = await media.createAVRecorder();
     this.avRecorder = recorder;
+    recorder.on('stateChange', (state: media.AVRecorderState, reason: media.StateChangeReason): void => {
+      if (this.avRecorder !== recorder || this.avRecorderGeneration !== generation) {
+        return;
+      }
+      if (state === 'error' || (reason === media.StateChangeReason.BACKGROUND &&
+        (state === 'paused' || state === 'stopped'))) {
+        // Native system transitions are not guaranteed to emit an error event.
+        // Freeze the clock before a busy user operation defers finalization.
+        this.durationMs = this.getCurrentDuration();
+        this.accumulatedDurationMs = this.durationMs;
+        this.segmentStartedAt = 0;
+        this.stopDurationTimer();
+        this.requestStop(state === 'error' ? '录音器进入错误状态，已停止采集。' :
+          '麦克风录音被系统或其他应用中断。');
+      }
+    });
     recorder.on('error', (error): void => {
-      if (this.avRecorder === recorder) {
+      if (this.avRecorder === recorder && this.avRecorderGeneration === generation) {
         this.requestStop(`录音器错误：${error.code}`);
       }
     });
@@ -376,9 +394,15 @@ export class RecordingService {
     await this.stopAmplitudePolling();
     const recorder = this.avRecorder;
     this.avRecorder = undefined;
+    this.avRecorderGeneration += 1;
     let failure = '';
     if (recorder !== undefined) {
-      try { await recorder.stop(); } catch (error) { failure = String(error); }
+      this.detachM4aListeners(recorder);
+      // A system interruption can already have stopped the instance. Calling
+      // stop again is illegal and must not turn its completed file into an error.
+      if (recorder.state === 'started' || recorder.state === 'paused') {
+        try { await recorder.stop(); } catch (error) { failure = String(error); }
+      }
       try { await recorder.release(); } catch (error) {
         this.avRecorder = recorder;
         failure = failure || String(error);
@@ -391,6 +415,11 @@ export class RecordingService {
     if (failure.length > 0) {
       throw new Error(failure);
     }
+  }
+
+  private detachM4aListeners(recorder: media.AVRecorder): void {
+    try { recorder.off('stateChange'); } catch (error) { console.warn(String(error)); }
+    try { recorder.off('error'); } catch (error) { console.warn(String(error)); }
   }
 
   private async startPcm(config: RecordingConfig): Promise<void> {
@@ -617,7 +646,9 @@ export class RecordingService {
     await this.stopAmplitudePolling();
     const recorder = this.avRecorder;
     this.avRecorder = undefined;
+    this.avRecorderGeneration += 1;
     if (recorder !== undefined) {
+      this.detachM4aListeners(recorder);
       try { await recorder.release(); } catch (error) {
         this.avRecorder = recorder;
         console.error(String(error));

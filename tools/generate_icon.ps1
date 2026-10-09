@@ -42,19 +42,12 @@ $backgroundPath = Join-Path $assetDirectory 'facilis-icon-background.png'
 $foregroundPath = Join-Path $assetDirectory 'facilis-icon-foreground.png'
 $previewPath = Join-Path $assetDirectory 'icon-preview.png'
 
-$background = [System.Drawing.Bitmap]::new(1024, 1024, [System.Drawing.Imaging.PixelFormat]::Format32bppArgb)
+$background = [System.Drawing.Bitmap]::new(1024, 1024, [System.Drawing.Imaging.PixelFormat]::Format24bppRgb)
 $backgroundGraphics = [System.Drawing.Graphics]::FromImage($background)
-$backgroundGraphics.SmoothingMode = [System.Drawing.Drawing2D.SmoothingMode]::HighQuality
-$backgroundRectangle = [System.Drawing.Rectangle]::new(0, 0, 1024, 1024)
-$backgroundBrush = [System.Drawing.Drawing2D.LinearGradientBrush]::new(
-  $backgroundRectangle,
-  [System.Drawing.ColorTranslator]::FromHtml('#FFAE5A'),
-  [System.Drawing.ColorTranslator]::FromHtml('#F06A00'),
-  90.0
-)
-$backgroundGraphics.FillRectangle($backgroundBrush, $backgroundRectangle)
+# HarmonyOS layered-icon backgrounds must be a solid, fully opaque color.
+# RGB storage also prevents alpha from being introduced by resource optimization.
+$backgroundGraphics.Clear([System.Drawing.ColorTranslator]::FromHtml('#F58720'))
 Save-Png -Bitmap $background -Path $backgroundPath
-$backgroundBrush.Dispose()
 $backgroundGraphics.Dispose()
 
 $foreground = [System.Drawing.Bitmap]::new(1024, 1024, [System.Drawing.Imaging.PixelFormat]::Format32bppArgb)
@@ -116,7 +109,7 @@ $supportPen.Dispose()
 $markBrush.Dispose()
 $foregroundGraphics.Dispose()
 
-$preview = [System.Drawing.Bitmap]::new(1024, 1024, [System.Drawing.Imaging.PixelFormat]::Format32bppArgb)
+$preview = [System.Drawing.Bitmap]::new(1024, 1024, [System.Drawing.Imaging.PixelFormat]::Format24bppRgb)
 $previewGraphics = [System.Drawing.Graphics]::FromImage($preview)
 $previewGraphics.DrawImageUnscaled($background, 0, 0)
 $previewGraphics.DrawImageUnscaled($foreground, 0, 0)

@@ -334,8 +334,17 @@ export default function deviceIntegrationTest() {
         let positionMs = 0;
         let message = '';
         let timeoutId = -1;
+        let isReady = false;
+        let isPlaying = false;
+        let loaded = false;
+        let expectedDurationMs = 0;
+        let targetMs = -1;
+        let seekSucceeded = false;
+        let phase = 'copy';
         player.setObserver((ready: boolean, playing: boolean, position: number,
           duration: number, error: string): void => {
+          isReady = ready;
+          isPlaying = playing;
           positionMs = position;
           durationMs = duration;
           if (error.length > 0) { message = error; }
@@ -344,23 +353,43 @@ export default function deviceIntegrationTest() {
           await fileIo.copyFile(playbackFile, temporaryPath);
           const metadata = AudioFileUtils.read(temporaryPath, extension);
           if (metadata === undefined) { throw new Error('Requested playback fixture has invalid metadata'); }
+          expectedDurationMs = metadata.durationMs;
           selected = RecordingRepository.importCompletedFile(context, temporaryPath, metadata.config, 'PlaybackCheck');
-          await Promise.race([
+          phase = 'load';
+          const inspected = await Promise.race([
             player.load(selected, context),
             new Promise<void>((resolve: () => void, reject: (reason: Error) => void): void => {
               timeoutId = setTimeout((): void => { reject(new Error('Saved recording prepare timeout')); }, 10000);
             })
           ]);
+          loaded = inspected !== undefined;
+          console.info(`SAVED_PLAYBACK_LOAD loaded=${loaded} ready=${isReady} playing=${isPlaying} ` +
+            `metadataDurationMs=${expectedDurationMs} playerDurationMs=${durationMs} positionMs=${positionMs} message=${message}`);
+          phase = 'duration';
           expect(durationMs > 3000).assertTrue();
           const duration = durationMs;
+          phase = 'play';
           await player.toggle();
           for (const target of [0, Math.floor(duration / 2), duration - 2000]) {
-            expect(await player.seek(target)).assertTrue();
+            targetMs = target;
+            phase = 'seek';
+            seekSucceeded = await player.seek(target);
+            console.info(`SAVED_PLAYBACK_SEEK targetMs=${targetMs} success=${seekSucceeded} ` +
+              `ready=${isReady} playing=${isPlaying} positionMs=${positionMs} durationMs=${durationMs} message=${message}`);
+            expect(seekSucceeded).assertTrue();
+            phase = 'position';
             await delay(1200);
+            console.info(`SAVED_PLAYBACK_POSITION targetMs=${targetMs} positionMs=${positionMs} ` +
+              `ready=${isReady} playing=${isPlaying} durationMs=${durationMs} message=${message}`);
             expect(message).assertEqual('');
             expect(positionMs > target + 100).assertTrue();
             console.info(`SAVED_PLAYBACK targetMs=${target} positionMs=${positionMs} durationMs=${duration}`);
           }
+        } catch (error) {
+          throw new Error(`Saved playback failed at ${phase}: loaded=${loaded}, ready=${isReady}, playing=${isPlaying}, ` +
+            `metadataDurationMs=${expectedDurationMs}, playerDurationMs=${durationMs}, targetMs=${targetMs}, ` +
+            `positionMs=${positionMs}, seekSucceeded=${seekSucceeded}, message=${message || '(none)'}, ` +
+            `cause=${(error as Error).message || String(error)}`);
         } finally {
           if (timeoutId >= 0) { clearTimeout(timeoutId); }
           await player.release();

@@ -14,6 +14,8 @@ let maxWrite = Infinity;
 let maxRead = Infinity;
 let asyncEof = false;
 let pickerAnswer = () => [];
+let shareShow = async () => {};
+let shareControllers = [];
 let passed = 0;
 let failed = 0;
 let scans = 0;
@@ -54,6 +56,9 @@ const fileIo = {
   unlinkSync: p => { before('unlink', p); fs.unlinkSync(p); },
   async access(p) { return fileIo.accessSync(p); },
   async stat(p) { return fileIo.statSync(p); },
+  async lstat(p) { before('lstat', p); return fs.lstatSync(p); },
+  async mkdir(p) { before('mkdir', p); return fs.mkdirSync(p); },
+  async listFile(p) { return fileIo.listFileSync(p); },
   async open(p, flags) { return fileIo.openSync(p, flags); },
   async read(fd, bytes, options) { return asyncEof ? 0 : fileIo.readSync(fd, bytes, options); },
   async write(fd, bytes, options) { return fileIo.writeSync(fd, bytes, options); },
@@ -78,6 +83,17 @@ function load(filename) {
     // Match API24 device behavior: encodeInto('') may return undefined rather than an empty array.
     if (name === '@kit.ArkTS') return { util: { TextEncoder: class { encodeInto(text) { return text.length ? new TextEncoder().encode(text) : undefined; } } } };
     if (name === '@kit.AbilityKit') return {};
+    if (name === '@kit.ArkData') return { uniformTypeDescriptor: { UniformDataType: { AUDIO: 'audio' } } };
+    if (name === '@kit.ShareKit') return { systemShare: {
+      SharedData: class { constructor(record) { this.record = record; } },
+      ShareController: class {
+        constructor(data) { this.data = data; this.callbacks = new Map(); shareControllers.push(this); }
+        on(name, callback) { this.callbacks.set(name, callback); }
+        off(name, callback) { if (this.callbacks.get(name) === callback) this.callbacks.delete(name); }
+        async show(context, options) { return shareShow(this, context, options); }
+        dismiss() { this.callbacks.get('dismiss')?.(); }
+      }, SharePreviewMode: { DETAIL: 'detail' }, SelectionMode: { SINGLE: 'single' }
+    } };
     if (name.startsWith('.')) return load(path.resolve(path.dirname(file), name + '.ets'));
     throw new Error('Unexpected test import: ' + name);
   };
@@ -89,6 +105,7 @@ const { RecordingRepository: repository, RecordingBatchAction: action } = load(p
 const { RecordingConfig, RecordingInfo } = load(path.join(base, 'models/RecordingTypes.ets'));
 const { WaveFileUtils } = load(path.join(base, 'utils/WaveFileUtils.ets'));
 const { ExportService } = load(path.join(base, 'services/ExportService.ets'));
+const { ShareService } = load(path.join(base, 'services/ShareService.ets'));
 const { AudioFileUtils } = load(path.join(base, 'utils/AudioFileUtils.ets'));
 function context() {
   const filesDir = fs.mkdtempSync(path.join(temporaryRoot, 'case-')).replaceAll('\\', '/');
@@ -152,6 +169,7 @@ function test(name, body) {
 }
 async function asyncTest(name, body) {
   fault = () => false; maxWrite = Infinity; maxRead = Infinity; asyncEof = false; pickerAnswer = () => [];
+  shareShow = async () => {}; shareControllers = [];
   try { await body(); passed++; console.log('PASS ' + name); }
   catch (error) { failed++; console.error('FAIL ' + name + ': ' + error.stack); }
   finally { fault = () => false; }
@@ -487,12 +505,205 @@ try {
     const ctx = context(), original = create(ctx), beforeBytes = fs.readFileSync(original.filePath);
     asyncEof = true;
     await assert.rejects(ExportService.exportWavAsPcm(ctx, original), /提前结束/);
-    assert.equal(fs.readdirSync(ctx.filesDir + '/exports').length, 0);
+    assert.equal(fs.readdirSync(ctx.cacheDir + '/pcm_shares').length, 0);
     asyncEof = false;
     fault = (op, p) => op === 'write' && p.endsWith('.pcm.tmp');
     await assert.rejects(ExportService.exportWavAsPcm(ctx, original));
-    assert.equal(fs.readdirSync(ctx.filesDir + '/exports').length, 0);
+    assert.equal(fs.readdirSync(ctx.cacheDir + '/pcm_shares').length, 0);
     assert.deepEqual(fs.readFileSync(original.filePath), beforeBytes);
+  });
+  await asyncTest('repeated PCM exports use unique cache copies and never create permanent legacy exports', async () => {
+    const ctx = context(), original = create(ctx), beforeBytes = fs.readFileSync(original.filePath);
+    const now = Date.now; Date.now = () => 1800000000000;
+    try {
+      const [first, second] = await Promise.all([
+        ExportService.exportWavAsPcm(ctx, original), ExportService.exportWavAsPcm(ctx, original)
+      ]);
+      assert.notEqual(first.filePath, second.filePath);
+      assert.ok(first.filePath.startsWith(ctx.cacheDir + '/pcm_shares/'));
+      assert.equal(fs.existsSync(ctx.filesDir + '/exports'), false);
+      assert.deepEqual(fs.readFileSync(first.filePath), beforeBytes.subarray(44));
+      const info = await ExportService.getPcmShareCleanupInfo(ctx);
+      assert.equal(info.fileCount, 0); assert.equal(info.protectedFileCount, 2);
+      assert.equal(info.protectedSizeBytes, original.sizeBytes * 2 - 88);
+    } finally { Date.now = now; }
+  });
+  await asyncTest('share presentation and cancellation retain the copy through the receiver grace', async () => {
+    const ctx = context(), original = create(ctx), exported = await ExportService.exportWavAsPcm(ctx, original);
+    await ShareService.shareAudioFile(ctx, exported.filePath, exported.fileName, 'anchor');
+    assert.equal(fs.existsSync(exported.filePath), true);
+    shareControllers[0].dismiss();
+    assert.equal(shareControllers[0].callbacks.size, 0);
+    const result = await ExportService.clearPcmShareCopies(ctx);
+    assert.equal(result.removedCount, 0); assert.equal(result.protectedFileCount, 1);
+    assert.equal(fs.existsSync(exported.filePath), true);
+  });
+  await asyncTest('an unfinished share remains protected beyond expiry until its panel closes', async () => {
+    const ctx = context(), original = create(ctx), exported = await ExportService.exportWavAsPcm(ctx, original);
+    await ShareService.shareAudioFile(ctx, exported.filePath, exported.fileName, 'anchor');
+    const now = Date.now, future = now() + 8 * 86400000; Date.now = () => future;
+    try {
+      assert.equal((await ExportService.prunePcmShareCache(ctx)).protectedFileCount, 1);
+      assert.equal((await ExportService.clearPcmShareCopies(ctx)).removedCount, 0);
+      shareControllers[0].dismiss();
+      assert.equal((await ExportService.prunePcmShareCache(ctx)).removedCount, 1);
+      assert.equal(fs.existsSync(exported.filePath), false);
+      assert.equal(fs.existsSync(original.filePath), true);
+    } finally { Date.now = now; }
+  });
+  await asyncTest('failed share presentation releases its pin while preserving the receiver grace', async () => {
+    const ctx = context(), original = create(ctx), exported = await ExportService.exportWavAsPcm(ctx, original);
+    shareShow = async () => { throw new Error('panel unavailable'); };
+    await assert.rejects(ShareService.shareAudioFile(ctx, exported.filePath, exported.fileName, 'anchor'), /panel unavailable/);
+    assert.equal(shareControllers[0].callbacks.size, 0);
+    assert.equal((await ExportService.clearPcmShareCopies(ctx)).protectedFileCount, 1);
+    const now = Date.now, future = now() + 2 * 86400000; Date.now = () => future;
+    try { assert.equal((await ExportService.clearPcmShareCopies(ctx)).removedCount, 1); }
+    finally { Date.now = now; }
+  });
+  await asyncTest('two panels referencing one PCM copy need both dismissals before its pin releases', async () => {
+    const ctx = context(), original = create(ctx), exported = await ExportService.exportWavAsPcm(ctx, original);
+    await ShareService.shareAudioFile(ctx, exported.filePath, exported.fileName, 'one');
+    await ShareService.shareAudioFile(ctx, exported.filePath, exported.fileName, 'two');
+    const now = Date.now, future = now() + 8 * 86400000; Date.now = () => future;
+    try {
+      shareControllers[0].dismiss(); shareControllers[0].dismiss();
+      assert.equal((await ExportService.clearPcmShareCopies(ctx)).protectedFileCount, 1);
+      shareControllers[1].dismiss();
+      assert.equal((await ExportService.clearPcmShareCopies(ctx)).removedCount, 1);
+    } finally { Date.now = now; }
+  });
+  await asyncTest('automatic expiry removes old cache copies and abandoned temporaries but never legacy exports', async () => {
+    const ctx = context(), original = create(ctx), exported = await ExportService.exportWavAsPcm(ctx, original);
+    const legacy = ctx.filesDir + '/exports'; fs.mkdirSync(legacy);
+    const legacyFile = legacy + '/old_PCM_1700000000000_1.pcm'; fs.writeFileSync(legacyFile, 'legacy');
+    const recentTemporary = ctx.cacheDir + `/pcm_shares/failure_PCM_${Date.now()}_999.pcm.tmp`;
+    fs.writeFileSync(recentTemporary, 'incomplete');
+    assert.equal((await ExportService.prunePcmShareCache(ctx)).removedCount, 1);
+    assert.equal(fs.existsSync(exported.filePath), true); assert.equal(fs.existsSync(recentTemporary), false);
+    const now = Date.now, future = now() + 8 * 86400000; Date.now = () => future;
+    try {
+      const result = await ExportService.prunePcmShareCache(ctx);
+      assert.equal(result.removedCount, 1); assert.equal(fs.existsSync(legacyFile), true);
+      assert.deepEqual(fs.readFileSync(original.filePath).subarray(44), Buffer.alloc(132300));
+    } finally { Date.now = now; }
+  });
+  await asyncTest('a failed export whose temporary unlink also fails is recoverable by the next safe cleanup', async () => {
+    const ctx = context(), original = create(ctx), beforeBytes = fs.readFileSync(original.filePath);
+    fault = (op, p) => (op === 'write' || op === 'unlink') && p.endsWith('.pcm.tmp');
+    await assert.rejects(ExportService.exportWavAsPcm(ctx, original), /导出 PCM 失败/);
+    assert.equal(fs.readdirSync(ctx.cacheDir + '/pcm_shares').length, 1);
+    fault = () => false;
+    assert.equal((await ExportService.prunePcmShareCache(ctx)).removedCount, 1);
+    const exported = await ExportService.exportWavAsPcm(ctx, original);
+    assert.deepEqual(fs.readFileSync(exported.filePath), beforeBytes.subarray(44));
+    assert.deepEqual(fs.readFileSync(original.filePath), beforeBytes);
+  });
+  await asyncTest('manual cleanup counts only generated legacy PCM copies and leaves unrelated files and directories', async () => {
+    const ctx = context(), original = create(ctx), legacy = ctx.filesDir + '/exports'; fs.mkdirSync(legacy);
+    const pcm = legacy + '/课堂_PCM_1800000000000_1.pcm'; fs.writeFileSync(pcm, 'abc');
+    const incomplete = pcm + '.tmp'; fs.writeFileSync(incomplete, 'xy');
+    const other = legacy + '/keep.pcm'; fs.writeFileSync(other, 'user file');
+    const nested = legacy + '/nested_PCM_1800000000000_2.pcm'; fs.mkdirSync(nested);
+    fs.writeFileSync(nested + '/must-stay.pcm', 'retained');
+    const info = await ExportService.getPcmShareCleanupInfo(ctx);
+    assert.equal(info.fileCount, 2); assert.equal(info.sizeBytes, 5);
+    const result = await ExportService.clearPcmShareCopies(ctx);
+    assert.equal(result.removedCount, 2); assert.equal(result.removedBytes, 5); assert.equal(result.failedCount, 0);
+    assert.equal(fs.existsSync(other), true); assert.equal(fs.existsSync(nested + '/must-stay.pcm'), true);
+    assert.equal(fs.existsSync(original.filePath), true); assert.equal(repository.list(ctx).length, 1);
+    assert.equal((await ExportService.clearPcmShareCopies(ctx)).removedCount, 0);
+  });
+  await asyncTest('cleanup reports deletion failures without false success and retries without altering recordings', async () => {
+    const ctx = context(), original = create(ctx), legacy = ctx.filesDir + '/exports'; fs.mkdirSync(legacy);
+    const first = legacy + '/first_PCM_1800000000000_1.pcm', second = legacy + '/second_PCM_1800000000000_2.pcm';
+    fs.writeFileSync(first, 'abc'); fs.writeFileSync(second, 'xy');
+    fault = (op, p) => op === 'unlink' && p === first;
+    const partial = await ExportService.clearPcmShareCopies(ctx);
+    assert.equal(partial.removedCount, 1); assert.equal(partial.removedBytes, 2); assert.equal(partial.failedCount, 1);
+    assert.equal(fs.existsSync(first), true); assert.equal(fs.existsSync(second), false);
+    fault = () => false;
+    assert.equal((await ExportService.clearPcmShareCopies(ctx)).removedBytes, 3);
+    assert.equal(fs.existsSync(original.filePath), true);
+  });
+  await asyncTest('an unreadable cleanup directory fails before removing any recognized copy', async () => {
+    const ctx = context(), legacy = ctx.filesDir + '/exports'; fs.mkdirSync(legacy);
+    const pcm = legacy + '/keep_PCM_1800000000000_1.pcm'; fs.writeFileSync(pcm, 'abc');
+    fault = (op, p) => op === 'list' && p === legacy;
+    await assert.rejects(ExportService.clearPcmShareCopies(ctx), /Injected list/);
+    assert.equal(fs.existsSync(pcm), true);
+  });
+  await asyncTest('an unreadable PCM entry is preserved and reported while other copies can be cleared', async () => {
+    const ctx = context(), legacy = ctx.filesDir + '/exports'; fs.mkdirSync(legacy);
+    const pcm = legacy + '/keep_PCM_1800000000000_1.pcm'; fs.writeFileSync(pcm, 'abc');
+    fault = (op, p) => op === 'lstat' && p === pcm;
+    assert.equal((await ExportService.getPcmShareCleanupInfo(ctx)).failedCount, 1);
+    assert.equal((await ExportService.clearPcmShareCopies(ctx)).failedCount, 1);
+    assert.equal(fs.existsSync(pcm), true);
+  });
+  await asyncTest('cache directory symbolic links are rejected instead of traversed', async () => {
+    const ctx = context(), original = create(ctx), cached = ctx.cacheDir + '/pcm_shares'; fs.mkdirSync(cached);
+    const lstat = fileIo.lstat;
+    fileIo.lstat = async p => p === cached ? { isDirectory: () => true, isSymbolicLink: () => true } : lstat(p);
+    try {
+      await assert.rejects(ExportService.exportWavAsPcm(ctx, original), /目录不可用/);
+      await assert.rejects(ExportService.clearPcmShareCopies(ctx), /目录不可用/);
+      assert.equal(fs.existsSync(original.filePath), true);
+    } finally { fileIo.lstat = lstat; }
+  });
+  await asyncTest('symbolic-link PCM entries are never followed or cleared', async () => {
+    const ctx = context(), legacy = ctx.filesDir + '/exports'; fs.mkdirSync(legacy);
+    const pcm = legacy + '/keep_PCM_1800000000000_1.pcm'; fs.writeFileSync(pcm, 'target');
+    const lstat = fileIo.lstat;
+    fileIo.lstat = async p => p === pcm ? { isFile: () => false, isSymbolicLink: () => true } : lstat(p);
+    try {
+      assert.equal((await ExportService.clearPcmShareCopies(ctx)).removedCount, 0);
+      assert.equal(fs.readFileSync(pcm, 'utf8'), 'target');
+    } finally { fileIo.lstat = lstat; }
+  });
+  await asyncTest('concurrent cleanup waits for an in-progress export and preserves the newly completed copy', async () => {
+    const ctx = context(), original = create(ctx), write = fileIo.write;
+    let resume, signal; const started = new Promise(resolve => { signal = resolve; });
+    const blocked = new Promise(resolve => { resume = resolve; }); let first = true;
+    fileIo.write = async (...args) => { if (first) { first = false; signal(); await blocked; } return write(...args); };
+    try {
+      const pending = ExportService.exportWavAsPcm(ctx, original); await started;
+      const cleanup = ExportService.clearPcmShareCopies(ctx); resume();
+      const exported = await pending, result = await cleanup;
+      assert.equal(result.removedCount, 0); assert.equal(result.protectedFileCount, 1);
+      assert.deepEqual(fs.readFileSync(exported.filePath), fs.readFileSync(original.filePath).subarray(44));
+      assert.equal(fs.readdirSync(ctx.cacheDir + '/pcm_shares').some(name => name.endsWith('.tmp')), false);
+    } finally { fileIo.write = write; resume(); }
+  });
+  await asyncTest('the count quota rejects further recent copies and expires old ones before exporting again', async () => {
+    const ctx = context(), original = create(ctx), directory = ctx.cacheDir + '/pcm_shares'; fs.mkdirSync(directory);
+    for (let index = 0; index < 32; index++) fs.writeFileSync(directory + `/copy_PCM_${Date.now()}_${index}.pcm`, 'x');
+    await assert.rejects(ExportService.exportWavAsPcm(ctx, original), /32 份或 2 GiB/);
+    assert.equal(fs.readdirSync(directory).length, 32); assert.equal(fs.existsSync(original.filePath), true);
+    const now = Date.now, future = now() + 8 * 86400000; Date.now = () => future;
+    try {
+      const exported = await ExportService.exportWavAsPcm(ctx, original);
+      assert.equal(fs.readdirSync(directory).length, 1); assert.equal(fs.existsSync(exported.filePath), true);
+    } finally { Date.now = now; }
+  });
+  await asyncTest('the byte quota rejects a new copy before writing and preserves existing cache bytes', async () => {
+    const ctx = context(), original = create(ctx), directory = ctx.cacheDir + '/pcm_shares'; fs.mkdirSync(directory);
+    const cached = directory + `/copy_PCM_${Date.now()}_1.pcm`; fs.writeFileSync(cached, 'retained');
+    const lstat = fileIo.lstat;
+    fileIo.lstat = async p => {
+      const stat = await lstat(p); if (p === cached) return { isFile: () => true, isSymbolicLink: () => false, size: 2 ** 31 };
+      return stat;
+    };
+    try {
+      await assert.rejects(ExportService.exportWavAsPcm(ctx, original), /32 份或 2 GiB/);
+      assert.equal(fs.readFileSync(cached, 'utf8'), 'retained'); assert.equal(fs.readdirSync(directory).length, 1);
+    } finally { fileIo.lstat = lstat; }
+  });
+  await asyncTest('invalid parent traversal is rejected without touching a recording or outside directory', async () => {
+    const ctx = context(), original = create(ctx), bad = { ...ctx, cacheDir: ctx.cacheDir + '/../recordings' };
+    await assert.rejects(ExportService.exportWavAsPcm(bad, original), /无效/);
+    await assert.rejects(ExportService.clearPcmShareCopies(bad), /无效/);
+    assert.equal(fs.existsSync(original.filePath), true); assert.equal(fs.existsSync(ctx.filesDir + '/recordings/pcm_shares'), false);
   });
   await asyncTest('system save returns URI only after complete copy, and cancellation creates no output', async () => {
     const ctx = context(), original = create(ctx), destination = ctx.cacheDir + '/user-save.wav';

@@ -1,0 +1,55 @@
+{
+  "results": [
+    {
+      "name": "background.flac",
+      "valid": true,
+      "sampleRate": 48000,
+      "channels": 1,
+      "decodedSamples": 2294400,
+      "decodedFrames": 2294400,
+      "durationMs": 47800,
+      "peak": 0.41278076171875,
+      "rms": 0.014659549433561802,
+      "dcOffset": -9.784139848653243e-8,
+      "nonzeroSamples": 2279351,
+      "fullScaleSamples": 0,
+      "fullScaleFraction": 0,
+      "pcmSha256": "f0322599055152f94a819f9b9eb643cd54f95c1c05eab1e6ae4ac392e8abaa57"
+    },
+    {
+      "name": "background.m4a",
+      "valid": true,
+      "sampleRate": 48000,
+      "channels": 1,
+      "decodedSamples": 2298880,
+      "decodedFrames": 2298880,
+      "durationMs": 47893.333333333336,
+      "peak": 0.3339326083660126,
+      "rms": 0.012272641937247532,
+      "dcOffset": 0.000003030671425975477,
+      "nonzeroSamples": 2292735,
+      "fullScaleSamples": 0,
+      "fullScaleFraction": 0,
+      "pcmSha256": "4c2ce7afa32cbb9594ed92ff74e5bb1e4f7e8af5d0f1e991f85ffa12375df716"
+    },
+    {
+      "name": "locked.wav",
+      "valid": true,
+      "sampleRate": 48000,
+      "channels": 1,
+      "decodedSamples": 28795200,
+      "decodedFrames": 28795200,
+      "durationMs": 599900,
+      "peak": 0.48333740234375,
+      "rms": 0.01341544828371629,
+      "dcOffset": -1.959067593351062e-8,
+      "nonzeroSamples": 28723289,
+      "fullScaleSamples": 0,
+      "fullScaleFraction": 0,
+      "pcmSha256": "328707a0bd417ffa8bb3c19f2630e434395c7eacebfdf77a9b379a015947a442"
+    }
+  ],
+  "losslessComparisons": [],
+  "aacChecks": [],
+  "failures": 0
+}

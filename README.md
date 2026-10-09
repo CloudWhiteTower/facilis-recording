@@ -1,6 +1,6 @@
 # Facilis Recording
 
-一款简洁、纯离线的 HarmonyOS 原生录音应用。它使用 ArkTS、ArkUI 与系统音频接口实现 WAV、AAC/M4A 和 FLAC 录制、实时波形、本地管理、播放与格式转换。当前版本为 **v3.0.1**，面向 HarmonyOS SDK 6.1.1（API 24）的手机和平板。
+一款简洁、纯离线的 HarmonyOS 原生录音应用。它使用 ArkTS、ArkUI 与系统音频接口实现 WAV、AAC/M4A 和 FLAC 录制、实时波形、本地管理、播放与格式转换。当前版本为 **v3.0.2**，面向 HarmonyOS SDK 6.1.1（API 24）的手机和平板。
 
 > `facilis` 是拉丁语形容词，意为“容易的、简便的”。这里将它作为品牌词与英文 `Recording` 组合；仓库名采用适合 URL 的 `facilis-recording`。
 
@@ -8,7 +8,7 @@
   <img src="docs/assets/icon-preview.png" width="128" alt="Facilis Recording icon">
 </p>
 
-![MatePad Air 竖屏录音页](data/v3-validation/recorder-portrait.png)
+![MatePad Air 竖屏录音页](data/v3.0.2-validation/raw/recorder-portrait.png)
 
 ## 功能
 
@@ -25,6 +25,7 @@
 - 页面切换：可左右滑动或点击底部图标；录音和播放的竖屏布局统一，横屏按宽高与可用空间分栏。录音页隐藏文字标题，保留必要的质量、计时和无障碍名称。
 - 后台录音：用户开始录音后申请系统录音长时任务，暂停或结束时释放，并显示系统通知。
 - 隐私：声明麦克风与后台运行权限，不包含网络权限或第三方运行时 SDK，录音默认保存在应用私有目录。
+- 设置：离线隐私说明、麦克风权限设置及 PCM 分享副本清理。工作副本采用独立缓存，保护近期副本和正在分享的文件；原始录音保持在资料库。
 
 ## 音频实现与质量
 
@@ -77,11 +78,12 @@ devecocli build --product default --build-mode release
 
 ## 下载与发布状态
 
-- [下载 v3.0.1](https://github.com/CloudWhiteTower/facilis-recording/releases/tag/v3.0.1)：文档与代码维护版本，整理音频接口分工和转码固定参数名称，保留 v3.0.0 的音频行为。提供 Release HAP、APP ZIP、源码归档与 SHA-256 清单，详见[附件说明](release/v3.0.1/README.md)。代码变更见 [PR #2](https://github.com/CloudWhiteTower/facilis-recording/pull/2)。
+- [下载 v3.0.2](https://github.com/CloudWhiteTower/facilis-recording/releases/tag/v3.0.2)：修复转换面板叠层与 M4A 系统状态同步，增加 PCM 分享副本清理、离线隐私入口和权限设置，规范图标及商店素材。提供 Release HAP、APP ZIP、源码归档与 SHA-256 清单，详见[附件说明](release/v3.0.2/README.md)。代码变更见 [PR #2](https://github.com/CloudWhiteTower/facilis-recording/pull/2)。
 - **公开 HAP 需由开发者签名后安装**。附件不包含本地调试证书或设备 Profile；GitHub 发布不代表已通过 AppGallery 审核或上架。
+- v3.0.2 Host 227/227、真实 MatePad 功能与界面 88/88、后台/锁屏 60/60、最终包界面与长文件播放 65/65；600 秒墙钟锁屏 WAV 保存为 599.9 秒，68 个文件独立完整解码、9 组无损样点比较与 17 组 AAC 边界检查通过。详见 [v3.0.2 验证](data/v3.0.2-validation/README.md)及[商店素材来源](data/store-assets-v3.0.2/README.md)。
 - v3.0.1 Host 185/185、真机相关回归 66/66，Debug/Release/ohosTest 构建通过；本次转换夹具 51 个文件独立解码、5 组无损比较和 15 组 AAC 边界检查通过，见 [v3.0.1 验证](data/v3.0.1-validation/README.md)。
 - v3.0.0 Host 回归 185/185，真实 MatePad Air 回归 80/80，十分钟 WAV 实录通过；另通过 PCM 精度检查、66 个文件的完整解码及无损/AAC 边界检查。字体、行高、控件及横竖屏布局已统一。这些结果保留在 [v3.0.0 验证](docs/V3_OPTIMIZATION.md)，v3.0.1 的复验单独记录于[发布说明](release/v3.0.1/README.md)；v2 模拟器结果保留在[历史音频记录](data/audio-functional-validation/README.md)。
-- HiSmartPerf 帧时间、功耗、锁屏策略和扬声器/耳机主观听感仍待专门验收；加速测试不计作真实设备长录音。
+- 帧时间、功耗、其他设备后台策略和扬声器/耳机主观听感仍待专门验收；本轮锁屏证据来自真实 MatePad 的 WAV，FLAC/M4A 做了桌面后台测试。加速测试不计作真实设备长录音。
 
 正式上架还需要开发者本人完成账号实名、APP ID/最终包名确认、发布签名、版权/备案材料和 AGC 提交。逐项状态见 [AppGallery 发布清单](docs/APPGALLERY_RELEASE.md)。
 

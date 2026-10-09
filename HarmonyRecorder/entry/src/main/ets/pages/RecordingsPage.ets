@@ -48,6 +48,7 @@ export struct RecordingsPage {
   @State private isSelecting: boolean = false;
   @State private selectedRecordingIds: string[] = [];
   @State private showQuickActions: boolean = false;
+  @State private isClosingSheet: boolean = false;
   @State private quickActionRecordingId: string = '';
   @State private isQuickRenaming: boolean = false;
   @State private showingConversion: boolean = false;
@@ -63,6 +64,9 @@ export struct RecordingsPage {
   @StorageLink(ThemeStore.MODE_KEY) private themeMode: number = ThemeMode.LIGHT;
   @StorageLink(MotionTheme.REDUCE_KEY) private reduceMotion: boolean = false;
   private pendingTrashConfirmation: RecordingInfo[] = [];
+  private pendingSheetAction: (() => void) | undefined = undefined;
+  private readonly actionScroller: Scroller = new Scroller();
+  private disposed: boolean = false;
   private filteredSource: RecordingInfo[] | undefined = undefined;
   private filteredQuery: string = '';
   private filteredCache: RecordingInfo[] = [];
@@ -71,7 +75,14 @@ export struct RecordingsPage {
   private rowsCache: RecordingLibraryRow[] = [];
 
   aboutToAppear(): void {
+    this.disposed = false;
     if (this.isVisible) { this.loadRecordings(); }
+  }
+
+  aboutToDisappear(): void {
+    this.disposed = true;
+    this.pendingSheetAction = undefined;
+    this.pendingTrashConfirmation = [];
   }
 
   private onVisibilityChanged(): void {
@@ -156,10 +167,17 @@ export struct RecordingsPage {
       height: this.isWide ? Math.min(560, Math.max(180, this.availableHeight - 80)) : SheetSize.LARGE,
       width: this.isWide ? Math.min(560, this.availableWidth - 48) : '100%',
       preferType: this.isWide ? SheetType.CENTER : SheetType.BOTTOM,
+      mode: SheetMode.OVERLAY,
       dragBar: true,
       showClose: false,
       backgroundColor: HarmonyTokens.glassSurface(),
       blurStyle: BlurStyle.COMPONENT_THICK,
+      onWillDismiss: (action: DismissSheetAction): void => {
+        if (!this.isWorking && !this.isConfirming && !this.isClosingSheet) {
+          this.isClosingSheet = true;
+          action.dismiss();
+        }
+      },
       onDisappear: (): void => {
         this.onQuickActionsDismissed();
       }
@@ -222,6 +240,7 @@ export struct RecordingsPage {
         content: {
           icon: $r('sys.symbol.magnifyingglass'),
           label: '搜索录音',
+          componentId: 'recordings-search',
           isEnabled: enabled,
           action: (): void => {
             if (!this.canUseNavigationMenu()) {
@@ -237,7 +256,8 @@ export struct RecordingsPage {
   }
 
   private canUseNavigationMenu(): boolean {
-    return !this.isSearching && !this.isSelecting && !this.isWorking && !this.isConfirming;
+    return !this.isSearching && !this.isSelecting && !this.isWorking && !this.isConfirming &&
+      !this.showQuickActions && !this.isClosingSheet;
   }
 
   @Builder
@@ -276,6 +296,7 @@ export struct RecordingsPage {
           .backgroundColor(Color.Transparent)
           .borderRadius(22)
           .accessibilityText('关闭搜索')
+          .id('recordings-search-close')
           .animation(undefined)
           .attributeModifier(PressFeedback.button(this.themeMode, this.reduceMotion))
           .animation(MotionTheme.press(this.reduceMotion))
@@ -480,6 +501,7 @@ export struct RecordingsPage {
           .alignItems(HorizontalAlign.End)
         }
         .layoutWeight(1)
+        .id(`recording-open-${recording.fileName}`)
         .onClick((): void => {
           if (this.isWorking || this.isConfirming) {
             return;
@@ -567,14 +589,16 @@ export struct RecordingsPage {
 
   @Builder
   private quickActionsSheet() {
-    Scroll() {
+    // Exclusive subpages must not retain outgoing action rows via exit transitions.
+    Scroll(this.actionScroller) {
       Column({ space: 10 }) {
         if (this.showingConversion) {
           AudioConversionPanel({
             recording: this.conversionRecording,
-            onRunning: (running: boolean): void => { this.isWorking = running; },
-            onBack: (): void => { this.showingConversion = false; },
+            onRunning: (running: boolean): void => { if (!this.disposed) { this.isWorking = running; } },
+            onBack: (): void => { this.actionScroller.scrollTo({ xOffset: 0, yOffset: 0 }); this.showingConversion = false; },
             onComplete: (converted: RecordingInfo): void => {
+              this.isClosingSheet = true;
               this.showQuickActions = false;
               this.loadRecordings(true);
               this.status = `已添加 ${converted.fileName}，原件已保留`;
@@ -582,6 +606,7 @@ export struct RecordingsPage {
           })
         } else {
         Text(this.isQuickRenaming ? '重命名' : this.quickActionDisplayName())
+          .id('library-actions-title')
           .width('100%')
           .attributeModifier(VisualTheme.text(TextRole.TITLE, true))
           .fontColor(HarmonyTokens.textPrimary())
@@ -591,6 +616,7 @@ export struct RecordingsPage {
 
         if (this.isQuickRenaming) {
           TextInput({ text: this.renameValue, placeholder: '录音名称' })
+            .id('library-rename-input')
             .width('100%')
             .height(VisualTheme.INPUT_HEIGHT)
             .fontSize(VisualTheme.BODY_SIZE)
@@ -601,7 +627,6 @@ export struct RecordingsPage {
             .borderRadius(16)
             .defaultFocus(true)
             .maxLength(80)
-            .transition(MotionTheme.appear(this.reduceMotion))
             .onChange((value: string): void => {
               this.renameValue = value;
             })
@@ -620,9 +645,8 @@ export struct RecordingsPage {
               .attributeModifier(PressFeedback.button(this.themeMode, this.reduceMotion))
               .animation(MotionTheme.press(this.reduceMotion))
               .onClick((): void => {
-                this.getUIContext().animateTo(MotionTheme.content(), (): void => {
-                  this.isQuickRenaming = false;
-                });
+                this.actionScroller.scrollTo({ xOffset: 0, yOffset: 0 });
+                this.isQuickRenaming = false;
               })
             Button() {
               SymbolGlyph($r('sys.symbol.checkmark'))
@@ -643,12 +667,17 @@ export struct RecordingsPage {
               })
           }
           .width('100%')
-          .transition(MotionTheme.appear(this.reduceMotion))
         } else {
-          this.quickFileAction($r('sys.symbol.arrow_down'), '保存到文件', (): void => { this.saveQuickToDevice(); })
+          this.quickFileAction($r('sys.symbol.arrow_down'), '保存到文件', (): void => {
+            const recording = this.quickActionRecording();
+            if (recording !== undefined) {
+              this.afterQuickActionsDismissed((): void => { this.saveQuickToDevice(recording); });
+            }
+          })
           this.quickFileAction($r('sys.symbol.waveform'), '转换格式', (): void => {
             const recording = this.quickActionRecording();
             if (recording !== undefined) {
+              this.actionScroller.scrollTo({ xOffset: 0, yOffset: 0 });
               this.conversionRecording = recording;
               this.showingConversion = true;
             }
@@ -672,12 +701,14 @@ export struct RecordingsPage {
             .backgroundColor(HarmonyTokens.surfaceSubtle())
             .borderRadius(16)
             .enabled(!this.isWorking && !this.isConfirming)
-            .transition(MotionTheme.appear(this.reduceMotion))
             .animation(undefined)
             .attributeModifier(PressFeedback.button(this.themeMode, this.reduceMotion))
             .animation(MotionTheme.press(this.reduceMotion))
             .onClick((): void => {
-              this.shareQuickRecording();
+              const recording = this.quickActionRecording();
+              if (recording !== undefined) {
+                this.afterQuickActionsDismissed((): void => { this.shareQuickRecording(recording); });
+              }
             })
           Button() {
             Row({ space: 14 }) {
@@ -697,15 +728,13 @@ export struct RecordingsPage {
             .backgroundColor(HarmonyTokens.surfaceSubtle())
             .borderRadius(16)
             .enabled(!this.isWorking && !this.isConfirming)
-            .transition(MotionTheme.appear(this.reduceMotion))
             .animation(undefined)
             .attributeModifier(PressFeedback.button(this.themeMode, this.reduceMotion))
             .animation(MotionTheme.press(this.reduceMotion))
             .onClick((): void => {
               this.renameValue = this.quickActionDisplayName();
-              this.getUIContext().animateTo(MotionTheme.content(), (): void => {
-                this.isQuickRenaming = true;
-              });
+              this.actionScroller.scrollTo({ xOffset: 0, yOffset: 0 });
+              this.isQuickRenaming = true;
             })
           Button() {
             Row({ space: 14 }) {
@@ -725,7 +754,6 @@ export struct RecordingsPage {
             .backgroundColor(HarmonyTokens.dangerSubtle())
             .borderRadius(16)
             .enabled(!this.isWorking && !this.isConfirming)
-            .transition(MotionTheme.appear(this.reduceMotion))
             .animation(undefined)
             .attributeModifier(PressFeedback.button(this.themeMode, this.reduceMotion))
             .animation(MotionTheme.press(this.reduceMotion))
@@ -743,6 +771,8 @@ export struct RecordingsPage {
     .height('100%')
     .align(Alignment.Top)
     .scrollBar(BarState.Auto)
+    .clip(true)
+    .id('library-actions-sheet')
   }
 
   @Builder
@@ -761,17 +791,15 @@ export struct RecordingsPage {
     }
       .width('100%').height(VisualTheme.ACTION_HEIGHT).padding({ left: 16, right: 16 })
       .backgroundColor(HarmonyTokens.surfaceSubtle()).borderRadius(16)
+      .id(`library-action-${title}`)
       .enabled(!this.isWorking && !this.isConfirming)
       .attributeModifier(PressFeedback.button(this.themeMode, this.reduceMotion))
       .onClick(action)
   }
 
-  private async saveQuickToDevice(): Promise<void> {
+  private async saveQuickToDevice(recording: RecordingInfo): Promise<void> {
     if (this.isWorking || this.isConfirming) { return; }
-    const recording = this.quickActionRecording();
-    if (recording === undefined) { return; }
     this.isWorking = true;
-    this.showQuickActions = false;
     try {
       const context = this.getUIContext().getHostContext() as common.UIAbilityContext;
       const destination = await ExportService.saveToDevice(context, recording);
@@ -916,7 +944,7 @@ export struct RecordingsPage {
   }
 
   private openQuickActions(recording: RecordingInfo): void {
-    if (this.isWorking || this.isConfirming) {
+    if (this.disposed || this.isWorking || this.isConfirming || this.isClosingSheet || this.showQuickActions) {
       return;
     }
     this.quickActionRecordingId = recording.id;
@@ -941,20 +969,14 @@ export struct RecordingsPage {
     return recording === undefined ? '录音操作' : recording.displayName;
   }
 
-  private async shareQuickRecording(): Promise<void> {
+  private async shareQuickRecording(recording: RecordingInfo): Promise<void> {
     if (this.isWorking || this.isConfirming) {
-      return;
-    }
-    const recording = this.quickActionRecording();
-    if (recording === undefined) {
-      this.status = '录音已不可用';
-      this.showQuickActions = false;
       return;
     }
     this.isWorking = true;
     try {
       const context = this.getUIContext().getHostContext() as common.UIAbilityContext;
-      await ShareService.shareRecording(context, recording, 'recording_quick_share');
+      await ShareService.shareRecording(context, recording, `recording-more-${recording.fileName}`);
       this.status = '';
     } catch (error) {
       this.status = '无法打开分享面板';
@@ -977,6 +999,7 @@ export struct RecordingsPage {
     try {
       const context = this.getUIContext().getHostContext() as common.UIAbilityContext;
       RecordingRepository.rename(context, recording, this.renameValue);
+      this.isClosingSheet = true;
       this.showQuickActions = false;
       this.loadRecordings(true);
     } catch (error) {
@@ -987,7 +1010,7 @@ export struct RecordingsPage {
   }
 
   private confirmMoveQuickRecordingToTrash(): void {
-    if (this.isWorking || this.isConfirming) {
+    if (this.disposed || this.isWorking || this.isConfirming || this.isClosingSheet) {
       return;
     }
     const recording = this.quickActionRecording();
@@ -998,20 +1021,37 @@ export struct RecordingsPage {
     // Dismiss the native Sheet before confirmation, so its exit cannot cover the row deletion.
     this.pendingTrashConfirmation = [recording];
     this.isConfirming = true;
+    this.isClosingSheet = true;
     this.showQuickActions = false;
   }
 
   private onQuickActionsDismissed(): void {
+    this.showQuickActions = false;
+    this.isClosingSheet = false;
     this.showingConversion = false;
     this.isQuickRenaming = false;
     this.renameValue = '';
     this.quickActionRecordingId = '';
+    const action = this.pendingSheetAction;
+    this.pendingSheetAction = undefined;
+    if (this.disposed) { this.pendingTrashConfirmation = []; return; }
     if (this.pendingTrashConfirmation.length > 0) {
       const pending = this.pendingTrashConfirmation;
       this.pendingTrashConfirmation = [];
       this.isConfirming = false;
       this.confirmBatch(pending, RecordingBatchAction.MOVE_TO_TRASH);
+    } else if (action !== undefined) {
+      action();
     }
+  }
+
+  private afterQuickActionsDismissed(action: () => void): void {
+    if (this.disposed || this.isWorking || this.isConfirming || this.isClosingSheet || !this.showQuickActions) {
+      return;
+    }
+    this.pendingSheetAction = action;
+    this.isClosingSheet = true;
+    this.showQuickActions = false;
   }
 
   private selectedRecordings(): RecordingInfo[] {

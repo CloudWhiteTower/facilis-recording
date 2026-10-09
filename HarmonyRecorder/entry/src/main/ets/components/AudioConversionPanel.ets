@@ -72,6 +72,7 @@ export struct AudioConversionPanel {
       }
       Row({ space: 10 }) {
         Button(this.running ? '取消转换' : '返回')
+          .id('audio-conversion-back')
           .layoutWeight(1).height(VisualTheme.CONTROL_HEIGHT).fontSize(VisualTheme.BODY_SIZE).fontWeight(FontWeight.Medium).fontColor(HarmonyTokens.textPrimary())
           .backgroundColor(HarmonyTokens.surfaceSubtle())
           .enabled(!this.cancelling)
@@ -89,7 +90,7 @@ export struct AudioConversionPanel {
           .attributeModifier(PressFeedback.button(this.themeMode, this.reduceMotion, true))
           .onClick((): void => { this.convert(); })
       }.width('100%')
-    }.width('100%')
+    }.width('100%').id('audio-conversion-panel')
   }
 
   @Builder
@@ -128,6 +129,7 @@ export struct AudioConversionPanel {
     if (this.running) { return; }
     this.running = true;
     this.cancelling = false;
+    this.progress = 0;
     this.message = '';
     this.onRunning(true);
     try {
@@ -140,8 +142,11 @@ export struct AudioConversionPanel {
     } catch (error) {
       if (!this.disposed) { this.message = (error as Error).message || '转换失败，原件已保留。'; }
     } finally {
-      if (!this.disposed) { this.running = false; this.cancelling = false; }
-      this.onRunning(false);
+      if (!this.disposed) {
+        this.running = false;
+        this.cancelling = false;
+        this.onRunning(false);
+      }
     }
   }
 }

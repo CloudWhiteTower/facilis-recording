@@ -44,6 +44,8 @@ struct RecordingQualitySheet {
     .width('100%')
     .height('100%')
     .scrollBar(BarState.Auto)
+    .clip(true)
+    .id('recording-quality-sheet')
   }
 
   @Builder
@@ -438,6 +440,7 @@ export struct RecorderPage {
       height: this.isWide ? Math.min(560, Math.max(180, this.contentHeight - 80)) : SheetSize.MEDIUM,
       width: this.isWide ? Math.min(560, this.availableWidth - 48) : '100%',
       preferType: this.isWide ? SheetType.CENTER : SheetType.BOTTOM,
+      mode: SheetMode.OVERLAY,
       dragBar: true,
       showClose: false,
       backgroundColor: HarmonyTokens.glassSurface(),
@@ -645,7 +648,7 @@ export struct RecorderPage {
       const context = this.getUIContext().getHostContext() as common.UIAbilityContext;
       const granted = await PermissionService.ensureMicrophonePermission(context);
       if (!granted) {
-        this.notice = '需要麦克风权限';
+        this.notice = PermissionService.MICROPHONE_DENIED_NOTICE;
         return;
       }
       await this.recordingService.start(context, this.currentConfig());

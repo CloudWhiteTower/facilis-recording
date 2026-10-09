@@ -8,6 +8,7 @@ import { MotionTheme } from '../utils/MotionTheme';
 import { PressFeedback } from '../utils/PressFeedback';
 import { AppPage, NavigationStore } from '../utils/NavigationStore';
 import { ResponsiveLayout } from '../utils/ResponsiveLayout';
+import { ExportService } from '../services/ExportService';
 import { PlayerPage } from './PlayerPage';
 import { RecorderPage } from './RecorderPage';
 import { RecordingsPage } from './RecordingsPage';
@@ -26,6 +27,7 @@ struct Index {
   private readonly tabsController: HdsTabsController = new HdsTabsController();
   private readonly pageStack: NavPathStack = new NavPathStack();
   private motionObserverRegistered: boolean = false;
+  private pcmShareCacheChecked: boolean = false;
   private readonly onReduceMotionChanged = (reduced: boolean): void => {
     this.getUIContext().runScopedTask((): void => {
       this.reduceMotion = reduced;
@@ -44,6 +46,14 @@ struct Index {
       console.warn(`Read reduced motion preference failed: ${String(error)}`);
     }
     this.applyThemeMode();
+    if (!this.pcmShareCacheChecked) {
+      this.pcmShareCacheChecked = true;
+      const context = this.getUIContext().getHostContext() as common.UIAbilityContext;
+      // Detached once per UI lifetime; switching tabs never repeats directory I/O.
+      ExportService.prunePcmShareCache(context).catch((error: Error): void => {
+        console.error(`Prune expired PCM share cache failed: ${error.message}`);
+      });
+    }
   }
 
   aboutToDisappear(): void {

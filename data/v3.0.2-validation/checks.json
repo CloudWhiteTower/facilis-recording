@@ -1,0 +1,122 @@
+{
+  "version": "3.0.2",
+  "versionCode": 3000002,
+  "date": "2026-10-09",
+  "device": {
+    "model": "MatePad Air",
+    "api": 24,
+    "realDevice": true,
+    "updateWithoutUninstall": true
+  },
+  "host": {
+    "total": 227,
+    "passed": 227,
+    "suites": {
+      "ui": 59,
+      "recording": 28,
+      "repository": 54,
+      "actions": 20,
+      "playback": 37,
+      "conversion": 17,
+      "permission": 12
+    }
+  },
+  "build": {
+    "releaseApp": true,
+    "testHap": true,
+    "api": 24,
+    "debug": false,
+    "abis": [
+      "arm64-v8a",
+      "x86_64"
+    ]
+  },
+  "functional": {
+    "total": 88,
+    "passed": 88,
+    "failures": 0,
+    "errors": 0,
+    "durationMs": 165385
+  },
+  "background": {
+    "total": 60,
+    "passed": 60,
+    "failures": 0,
+    "errors": 0,
+    "durationMs": 709877
+  },
+  "finalUi": {
+    "total": 65,
+    "passed": 65,
+    "failures": 0,
+    "errors": 0,
+    "durationMs": 142378
+  },
+  "locked": {
+    "seconds": 600,
+    "elapsedMs": 600299,
+    "durationMs": 599900,
+    "dataLength": 57590400,
+    "screenOffTicks": 120,
+    "bytes": 57590444
+  },
+  "independentDecode": {
+    "files": 68,
+    "losslessComparisons": 9,
+    "aacBoundaryChecks": 17,
+    "failures": 0
+  },
+  "icon": {
+    "backgroundAlpha": [
+      255,
+      255
+    ],
+    "size": [
+      1024,
+      1024
+    ],
+    "samePixelsAsSource": true,
+    "layers": [
+      {
+        "resource": "resources/base/media/background.png",
+        "mode": "RGB",
+        "size": [
+          1024,
+          1024
+        ],
+        "alpha": [
+          255,
+          255
+        ],
+        "sameBytes": true,
+        "samePixels": true,
+        "sha256": "0b4ebd60c85859d172036ab922257f5856bf5ee87f8ef4025ee41a5b88438879"
+      },
+      {
+        "resource": "resources/base/media/foreground.png",
+        "mode": "RGBA",
+        "size": [
+          1024,
+          1024
+        ],
+        "alpha": [
+          0,
+          255
+        ],
+        "sameBytes": true,
+        "samePixels": true,
+        "sha256": "cbdab26a429b0445979f2e60572d07bdea8cf817734f962d69780c2985843225"
+      }
+    ]
+  },
+  "preservation": {
+    "originalLibraryIdsUnchanged": true,
+    "userAudioPublished": false
+  },
+  "limitations": [
+    "No physical phone test in this run; phone-size artwork uses tablet captures",
+    "FLAC and M4A tested on home screen; 600-second locked test is WAV",
+    "No live call interruption, acoustic quality or power benchmark",
+    "Store publisher identity, privacy hosting and release signing remain for registration"
+  ]
+}

@@ -19,7 +19,8 @@ function environment() {
     backgroundCancel: null, pcmMaximum: 0, queueMaximum: 0, amplitude: 0,
     cancelDuringStart: false, cancelDuringPause: false, flacCalls: [], nativeFd: -1,
     flacCreateFails: false, flacFinishFails: false, stopFailures: 0, releaseFailures: 0, writeCalls: 0,
-    streamOverride: null, streamInfoFails: false, capturers: [] };
+    streamOverride: null, streamInfoFails: false, capturers: [], recorders: [],
+    m4aPausePending: null, m4aPauseResolve: null };
   const recordFile = fd => {
     const handle = descriptors.get(fd);
     assert.ok(handle, 'file descriptor is open');
@@ -122,16 +123,43 @@ function environment() {
   const media = {
     AudioSourceType: { AUDIO_SOURCE_TYPE_MIC: 0 }, CodecMimeType: { AUDIO_AAC: 0 },
     AacProfile: { AAC_LC: 0 }, ContainerFormatType: { CFT_MPEG_4A: 0 },
+    StateChangeReason: { USER: 1, BACKGROUND: 2 },
     async createAVRecorder() {
       let running = false;
-      return { on() {}, async prepare() {},
-        async start() { running = true; state.activeMic++; },
-        async pause() { if (running) state.activeMic--; running = false; },
-        async resume() { if (!running) state.activeMic++; running = true; },
-        async stop() { if (running) state.activeMic--; running = false; },
-        async release() { if (running) state.activeMic--; running = false; },
+      const listeners = new Map();
+      const recorder = { state: 'idle', listeners, stopCalls: 0, releaseCalls: 0,
+        on(name, callback) { listeners.set(name, callback); }, off(name) { listeners.delete(name); },
+        transition(next, reason = media.StateChangeReason.USER) {
+          this.state = next;
+          listeners.get('stateChange')?.(next, reason);
+        },
+        async prepare() { this.transition('prepared'); },
+        async start() { running = true; state.activeMic++; this.transition('started'); },
+        async pause() {
+          if (running) state.activeMic--;
+          running = false; this.transition('paused');
+          if (state.m4aPausePending) await state.m4aPausePending;
+        },
+        async resume() { if (!running) state.activeMic++; running = true; this.transition('started'); },
+        async stop() {
+          this.stopCalls++;
+          if (this.state !== 'started' && this.state !== 'paused') throw new Error('illegal native stop state');
+          if (running) state.activeMic--;
+          running = false; this.transition('stopped');
+        },
+        async release() {
+          this.releaseCalls++;
+          if (running) state.activeMic--;
+          running = false; this.transition('released');
+        },
+        systemTransition(next) {
+          if (running) state.activeMic--;
+          running = false; this.transition(next, media.StateChangeReason.BACKGROUND);
+        },
         async getAudioCapturerMaxAmplitude() { return 0; }
       };
+      state.recorders.push(recorder);
+      return recorder;
     }
   };
   function load(filename) {
@@ -357,6 +385,61 @@ async function test(name, fn) { await fn(); passed++; console.log(`PASS ${name}`
     await e.service.resume(); e.state.now += 2000;
     const result = await e.service.stop(); assert.equal(result.durationMs, 3000);
     assert.equal(e.notices.length, 0); e.assertReleased();
+  });
+  await test('system-stopped M4A finalizes promptly without a duplicate native stop', async () => {
+    const e = environment(); await e.service.start({}, e.config.aac(128000));
+    e.state.now += 30000;
+    const recorder = e.state.recorders[0]; recorder.systemTransition('stopped');
+    await e.settled();
+    assert.equal(e.service.getState(), e.states.STOPPED);
+    assert.equal(e.saved.length, 1); assert.equal(e.saved[0].durationMs, 30000);
+    assert.equal(recorder.stopCalls, 0); assert.equal(recorder.releaseCalls, 1);
+    assert.equal(recorder.listeners.size, 0); e.assertReleased();
+  });
+  await test('system-paused M4A saves the interrupted prefix and clears its background lease', async () => {
+    const e = environment(); await e.service.start({}, e.config.aac(128000)); e.state.now += 8000;
+    const recorder = e.state.recorders[0]; recorder.systemTransition('paused'); await e.settled();
+    assert.equal(e.saved.length, 1); assert.equal(e.saved[0].durationMs, 8000);
+    assert.equal(recorder.stopCalls, 1); assert.equal(e.service.getState(), e.states.STOPPED);
+    e.assertReleased();
+  });
+  await test('M4A error state without an error callback releases native resources without an illegal stop', async () => {
+    const e = environment(); await e.service.start({}, e.config.aac(128000));
+    const recorder = e.state.recorders[0]; recorder.systemTransition('error'); await e.settled();
+    assert.equal(recorder.stopCalls, 0); assert.equal(recorder.releaseCalls, 1);
+    assert.equal(e.service.getState(), e.states.STOPPED);
+    assert.ok(e.notices.some(message => message.includes('错误状态'))); e.assertReleased();
+  });
+  await test('user M4A pause, resume and stop events never masquerade as a system interruption', async () => {
+    const e = environment(); await e.service.start({}, e.config.aac(128000)); e.state.now += 1000;
+    await e.service.pause(); await e.settled();
+    assert.equal(e.saved.length, 0); assert.equal(e.service.getState(), e.states.PAUSED);
+    assert.equal(e.state.bgActive, false);
+    e.state.now += 60000; await e.service.resume(); e.state.now += 2000;
+    const saved = await e.service.stop(); await e.settled();
+    assert.equal(saved.durationMs, 3000); assert.equal(e.saved.length, 1);
+    assert.equal(e.state.recorders[0].stopCalls, 1); assert.equal(e.notices.length, 0); e.assertReleased();
+  });
+  await test('late state and error callbacks from a released M4A cannot stop its replacement', async () => {
+    const e = environment(); await e.service.start({}, e.config.aac(128000));
+    const old = e.state.recorders[0];
+    const lateState = old.listeners.get('stateChange'), lateError = old.listeners.get('error');
+    await e.service.stop(); await e.service.start({}, e.config.aac(128000));
+    lateState('stopped', 2); lateError({ code: 5400103 }); await e.settled();
+    assert.equal(e.saved.length, 1); assert.equal(e.service.getState(), e.states.RECORDING);
+    assert.equal(e.state.activeMic, 1); assert.equal(e.state.bgActive, true);
+    assert.equal(old.listeners.size, 0); await e.service.stop(); e.assertReleased();
+  });
+  await test('system M4A interruption during a pending pause freezes time and defers saving safely', async () => {
+    const e = environment(); await e.service.start({}, e.config.aac(128000)); e.state.now += 2000;
+    e.state.m4aPausePending = new Promise(resolve => { e.state.m4aPauseResolve = resolve; });
+    const pausing = e.service.pause();
+    for (let pass = 0; pass < 10; pass++) await Promise.resolve();
+    e.state.recorders[0].systemTransition('stopped'); e.state.now += 30000;
+    assert.equal(e.service.getDuration(), 2000); assert.equal(e.saved.length, 0);
+    e.state.m4aPauseResolve(); await pausing; await e.settled();
+    assert.equal(e.saved.length, 1); assert.equal(e.saved[0].durationMs, 2000);
+    assert.equal(e.state.recorders[0].stopCalls, 0); e.assertReleased();
   });
   await test('system cancellation received during start or pause is deferred and never lost', async () => {
     const starting = environment(); starting.state.cancelDuringStart = true;
