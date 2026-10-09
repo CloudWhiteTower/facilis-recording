@@ -1,9 +1,16 @@
 # 项目文档
 
-当前版本为 **v2.0.0**，保持 HarmonyOS SDK **6.1.1（API 24）**。GitHub 附件未签名，安装前需开发者签名；本次发布不代表 AppGallery 上架。
+当前版本为 **v3.0.2**，保持 HarmonyOS SDK **6.1.1（API 24）**。GitHub 附件未签名，安装前需开发者签名；本次发布不代表 AppGallery 上架。
 
 | 文档 | 内容 |
 | --- | --- |
+| [v3.0.2 发布附件](../release/v3.0.2/README.md) | 副本清理、隐私、图标、叠层修复和未签名附件 |
+| [v3.0.2 验证](../data/v3.0.2-validation/README.md) | 本次 Host、真机、后台/锁屏、独立解码和截图 |
+| [v3.0.2 商店素材](../data/store-assets-v3.0.2/README.md) | 规范尺寸、来源与手机画布的验收边界 |
+| [v3 全应用优化与验证](V3_OPTIMIZATION.md) | 波形缓存、转换调度、WAV 恢复、文件批次与当前验证 |
+| [v3.0.1 发布附件](../release/v3.0.1/README.md) | 文档与代码维护内容、本次复验、当前未签名附件 |
+| [v3.0.1 验证](../data/v3.0.1-validation/README.md) | Host 185、真机相关回归 66、独立解码和原生库一致性 |
+| [v3.0.0 发布附件](../release/v3.0.0/README.md) | v3 音频与界面优化版本的历史发布记录 |
 | [录音、文件与转换链路](AUDIO_PIPELINE.md) | 播放修复、真实文件校验、保存到文件、应用内转换与验证边界 |
 | [v2.0.0 发布附件](../release/v2.0.0/README.md) | 未签名 HAP、APP、源码归档和校验文件 |
 | [音频功能验证](../data/audio-functional-validation/README.md) | Host 166、设备 67、独立解码、播放和系统保存证据 |
@@ -13,8 +20,11 @@
 | [界面截图](../data/v2-validation/README.md) | API 24 手机亮暗页面与质量菜单 |
 | [工程说明](../HarmonyRecorder/README.md) | 录音链路、文件管理、构建与测试 |
 | [AppGallery 发布清单](APPGALLERY_RELEASE.md) | 正式上架准备与当前交付状态 |
+| [提交准备审查](STORE_READINESS.md) | 本轮功能复核、待修复及待实测项目 |
+| [提交准备早期复验](../data/store-readiness-validation/README.md) | 发布前早期工作区的 191 项 Host、67 项真机及三格式短实录 |
+| [审核操作说明](STORE_REVIEW_GUIDE.md) | 无账号离线应用的审核说明与最终包验收步骤 |
 | [隐私政策草案](PRIVACY_POLICY_DRAFT.md) | 权限、数据保存、分享与删除 |
 | [应用市场文案](STORE_LISTING_ZH.md) | 产品说明与功能文案 |
 | [品牌与图标](BRANDING.md) | 应用名称和图标资源 |
 
-以 [v2.0.0 标签](https://github.com/CloudWhiteTower/facilis-recording/releases/tag/v2.0.0)作为本次交付入口。功能回归在 2026-09-27 完成，版本更新后的 Release 构建在 2026-09-28 完成；更早的文档保留各阶段验证记录，不应把早期测试数量视为当前总数。设备验证均在模拟器完成，API 26、实体设备听感、锁屏和功耗仍待验证。
+以 [v3.0.2 标签](https://github.com/CloudWhiteTower/facilis-recording/releases/tag/v3.0.2)作为当前交付入口。本次复验单独记录；v3.0.0、v3.0.1 和早期提交准备记录保留原测试归属，不把先前版本的长录音、测试数量或模拟器结果写成本次新增测试。

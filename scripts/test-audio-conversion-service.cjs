@@ -152,6 +152,14 @@ async function test(name, body) {
   catch (error) { failed++; console.error('FAIL ' + name + ': ' + error.stack); }
 }
 (async () => {
+  await test('progress is monotonic, deduplicated and resets when the same service is reused', async () => {
+    const e = environment(), gate = deferred(); e.state.runGate = gate;
+    const pending = e.convert(); await settle();
+    for (const progress of [0.4, 0.4, 0.3, 0.4001, 0.8, 0.7]) { e.state.progress = progress; e.tick(); }
+    assert.deepEqual(e.notices, [0, 0.4, 0.8]); gate.resolve(); await pending;
+    e.state.runGate = null; await e.convert();
+    assert.deepEqual(e.notices, [0, 0.4, 0.8, 1, 0, 1]); e.clean(2);
+  });
   await test('success releases native resources, flushes and closes output, then imports a new file', async () => {
     const e = environment(), result = await e.convert(); e.clean(1);
     assert.notEqual(result.filePath, e.original.filePath); assert.deepEqual(e.notices, [0, 1]);

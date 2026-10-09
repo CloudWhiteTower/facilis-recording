@@ -161,6 +161,18 @@ async function test(name, body) {
   catch (error) { failed++; console.error('FAIL ' + name + ': ' + error.stack); }
 }
 (async () => {
+  await test('stalled playback control settles at its deadline and late native success stays detached', async () => {
+    const e = environment(), old = await e.ready(), gate = deferred(); old.playGate = gate;
+    const pending = e.service.toggle(); await settle(); e.advanceTimers(8000); await completes(pending);
+    assert.equal(e.notices.at(-1).ready, false); assert.match(e.notices.at(-1).message, /播放控制超时/);
+    const current = await e.ready('retry'); gate.resolve(); await settle();
+    assert.equal(e.notices.at(-1).playing, false); await e.service.toggle(); assert.equal(current.playCalls, 1);
+    await e.service.release(); assert.equal(e.files.size, 0); assert.equal(e.timers.size, 0);
+  });
+  await test('observer failures do not prevent playback or descriptor cleanup', async () => {
+    const e = environment(); e.service.setObserver(() => { throw new Error('detached observer'); });
+    await e.ready(); await e.service.toggle(); await e.service.release(); assert.equal(e.files.size, 0);
+  });
   await test('normal preparation, playback, bounded seeking and replay remain functional', async () => {
     const e = environment(), player = await e.ready();
     assert.equal(player.prepareCalls, 1);

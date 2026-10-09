@@ -1,4 +1,5 @@
 import { common } from '@kit.AbilityKit';
+import { TextRole, VisualTheme } from '../utils/VisualTheme';
 import { BusinessError } from '@kit.BasicServicesKit';
 import {
   HdsNavigation,
@@ -47,6 +48,7 @@ export struct RecordingsPage {
   @State private isSelecting: boolean = false;
   @State private selectedRecordingIds: string[] = [];
   @State private showQuickActions: boolean = false;
+  @State private isClosingSheet: boolean = false;
   @State private quickActionRecordingId: string = '';
   @State private isQuickRenaming: boolean = false;
   @State private showingConversion: boolean = false;
@@ -62,9 +64,25 @@ export struct RecordingsPage {
   @StorageLink(ThemeStore.MODE_KEY) private themeMode: number = ThemeMode.LIGHT;
   @StorageLink(MotionTheme.REDUCE_KEY) private reduceMotion: boolean = false;
   private pendingTrashConfirmation: RecordingInfo[] = [];
+  private pendingSheetAction: (() => void) | undefined = undefined;
+  private readonly actionScroller: Scroller = new Scroller();
+  private disposed: boolean = false;
+  private filteredSource: RecordingInfo[] | undefined = undefined;
+  private filteredQuery: string = '';
+  private filteredCache: RecordingInfo[] = [];
+  private rowsSource: RecordingInfo[] | undefined = undefined;
+  private rowsKey: string = '';
+  private rowsCache: RecordingLibraryRow[] = [];
 
   aboutToAppear(): void {
-    this.loadRecordings();
+    this.disposed = false;
+    if (this.isVisible) { this.loadRecordings(); }
+  }
+
+  aboutToDisappear(): void {
+    this.disposed = true;
+    this.pendingSheetAction = undefined;
+    this.pendingTrashConfirmation = [];
   }
 
   private onVisibilityChanged(): void {
@@ -81,7 +99,7 @@ export struct RecordingsPage {
         }
         if (this.status.length > 0) {
           Text(this.status)
-            .fontSize(12)
+            .attributeModifier(VisualTheme.text(TextRole.CAPTION))
             .fontColor(HarmonyTokens.danger())
             .width(ResponsiveLayout.contentWidth(this.isWide))
             .constraintSize({ maxWidth: 920 })
@@ -95,7 +113,7 @@ export struct RecordingsPage {
         }
         if (this.unreadableCount > 0) {
           Text(`${this.unreadableCount} 个录音文件不完整或无法识别；原文件已保留，可在详情查看错误。`)
-            .fontSize(12).fontColor(HarmonyTokens.textSecondary())
+            .attributeModifier(VisualTheme.text(TextRole.CAPTION)).fontColor(HarmonyTokens.textSecondary())
             .width(ResponsiveLayout.contentWidth(this.isWide)).constraintSize({ maxWidth: 920 })
             .padding({ left: ResponsiveLayout.horizontalPadding(this.isWide),
               right: ResponsiveLayout.horizontalPadding(this.isWide), bottom: 8 })
@@ -130,7 +148,8 @@ export struct RecordingsPage {
       enableComponentSafeArea: true
     })
     .mode(NavigationMode.Stack)
-    .titleMode(HdsNavigationTitleMode.FULL)
+    .titleMode(ResponsiveLayout.usesSplitLayout(this.availableWidth, this.availableHeight) ?
+      HdsNavigationTitleMode.MINI : HdsNavigationTitleMode.FULL)
     .hideBackButton(true)
     .backgroundColor(HarmonyTokens.pageBackground())
     .onAreaChange((oldValue: Area, newValue: Area): void => {
@@ -148,10 +167,17 @@ export struct RecordingsPage {
       height: this.isWide ? Math.min(560, Math.max(180, this.availableHeight - 80)) : SheetSize.LARGE,
       width: this.isWide ? Math.min(560, this.availableWidth - 48) : '100%',
       preferType: this.isWide ? SheetType.CENTER : SheetType.BOTTOM,
+      mode: SheetMode.OVERLAY,
       dragBar: true,
       showClose: false,
       backgroundColor: HarmonyTokens.glassSurface(),
       blurStyle: BlurStyle.COMPONENT_THICK,
+      onWillDismiss: (action: DismissSheetAction): void => {
+        if (!this.isWorking && !this.isConfirming && !this.isClosingSheet) {
+          this.isClosingSheet = true;
+          action.dismiss();
+        }
+      },
       onDisappear: (): void => {
         this.onQuickActionsDismissed();
       }
@@ -214,6 +240,7 @@ export struct RecordingsPage {
         content: {
           icon: $r('sys.symbol.magnifyingglass'),
           label: '搜索录音',
+          componentId: 'recordings-search',
           isEnabled: enabled,
           action: (): void => {
             if (!this.canUseNavigationMenu()) {
@@ -229,7 +256,8 @@ export struct RecordingsPage {
   }
 
   private canUseNavigationMenu(): boolean {
-    return !this.isSearching && !this.isSelecting && !this.isWorking && !this.isConfirming;
+    return !this.isSearching && !this.isSelecting && !this.isWorking && !this.isConfirming &&
+      !this.showQuickActions && !this.isClosingSheet;
   }
 
   @Builder
@@ -240,13 +268,15 @@ export struct RecordingsPage {
           Search({ value: this.searchQuery, placeholder: '搜索录音' })
             .id('recording_search')
             .layoutWeight(1)
-            .height(44)
+            .height(VisualTheme.CONTROL_HEIGHT)
+            .textFont({ size: VisualTheme.BODY_SIZE })
+            .placeholderFont({ size: VisualTheme.BODY_SIZE })
             .fontColor(HarmonyTokens.textPrimary())
             .placeholderColor(HarmonyTokens.textTertiary())
-            .searchIcon({ size: 18, color: HarmonyTokens.textSecondary() })
+            .searchIcon({ size: VisualTheme.ICON_TOOL, color: HarmonyTokens.textSecondary() })
             .cancelButton({
               style: CancelButtonStyle.CONSTANT,
-              icon: { size: 18, color: HarmonyTokens.textSecondary() }
+              icon: { size: VisualTheme.ICON_TOOL, color: HarmonyTokens.textSecondary() }
             })
             .backgroundColor(Color.Transparent)
             .borderRadius(18)
@@ -258,14 +288,15 @@ export struct RecordingsPage {
             })
           Button() {
             SymbolGlyph($r('sys.symbol.xmark'))
-              .fontSize(19)
+              .fontSize(VisualTheme.ICON_TOOL)
               .fontColor([HarmonyTokens.textSecondary()])
           }
-          .width(44)
-          .height(44)
+          .width(VisualTheme.CONTROL_HEIGHT)
+          .height(VisualTheme.CONTROL_HEIGHT)
           .backgroundColor(Color.Transparent)
           .borderRadius(22)
           .accessibilityText('关闭搜索')
+          .id('recordings-search-close')
           .animation(undefined)
           .attributeModifier(PressFeedback.button(this.themeMode, this.reduceMotion))
           .animation(MotionTheme.press(this.reduceMotion))
@@ -278,11 +309,11 @@ export struct RecordingsPage {
         } else {
           Button() {
             SymbolGlyph($r('sys.symbol.xmark'))
-              .fontSize(19)
+              .fontSize(VisualTheme.ICON_TOOL)
               .fontColor([HarmonyTokens.textSecondary()])
           }
-          .width(44)
-          .height(44)
+          .width(VisualTheme.CONTROL_HEIGHT)
+          .height(VisualTheme.CONTROL_HEIGHT)
           .backgroundColor(Color.Transparent)
           .borderRadius(22)
           .accessibilityText('退出多选')
@@ -296,11 +327,11 @@ export struct RecordingsPage {
           Blank().layoutWeight(1)
           Button() {
             SymbolGlyph($r('sys.symbol.checkmark_square'))
-              .fontSize(21)
+              .fontSize(VisualTheme.ICON_TOOL)
               .fontColor([HarmonyTokens.primary()])
           }
-          .width(44)
-          .height(44)
+          .width(VisualTheme.CONTROL_HEIGHT)
+          .height(VisualTheme.CONTROL_HEIGHT)
           .backgroundColor(HarmonyTokens.primarySubtle())
           .borderRadius(22)
           .accessibilityText('全选当前录音')
@@ -314,11 +345,11 @@ export struct RecordingsPage {
           if (this.showingTrash) {
             Button() {
               SymbolGlyph($r('sys.symbol.arrow_counterclockwise'))
-                .fontSize(20)
+                .fontSize(VisualTheme.ICON_TOOL)
                 .fontColor([HarmonyTokens.primary()])
             }
-            .width(44)
-            .height(44)
+            .width(VisualTheme.CONTROL_HEIGHT)
+            .height(VisualTheme.CONTROL_HEIGHT)
             .backgroundColor(HarmonyTokens.primarySubtle())
             .borderRadius(22)
             .enabled(this.selectedRecordingIds.length > 0 && !this.isWorking && !this.isConfirming)
@@ -332,11 +363,11 @@ export struct RecordingsPage {
           }
           Button() {
             SymbolGlyph($r('sys.symbol.trash'))
-              .fontSize(20)
+              .fontSize(VisualTheme.ICON_TOOL)
               .fontColor([HarmonyTokens.danger()])
           }
-          .width(44)
-          .height(44)
+          .width(VisualTheme.CONTROL_HEIGHT)
+          .height(VisualTheme.CONTROL_HEIGHT)
           .backgroundColor(HarmonyTokens.dangerSubtle())
           .borderRadius(22)
           .enabled(this.selectedRecordingIds.length > 0 && !this.isWorking && !this.isConfirming)
@@ -386,7 +417,8 @@ export struct RecordingsPage {
         ListItem() {
           this.emptyState()
         }
-        .height(this.isWide ? 300 : 240)
+        .height(ResponsiveLayout.usesSplitLayout(this.availableWidth, this.availableHeight) ?
+          Math.min(240, Math.max(160, this.availableHeight - 240)) : 240)
         .transition(MotionTheme.appear(this.reduceMotion))
       }
 
@@ -399,6 +431,7 @@ export struct RecordingsPage {
     }
     .width(ResponsiveLayout.contentWidth(this.isWide))
       .constraintSize({ maxWidth: 920 })
+    .id('recordings-list')
     .layoutWeight(1)
     .padding({
       left: ResponsiveLayout.horizontalPadding(this.isWide),
@@ -412,8 +445,7 @@ export struct RecordingsPage {
   private dateGroupHeader(label: string) {
     Text(label)
       .width('100%')
-      .fontSize(13)
-      .fontWeight(FontWeight.Medium)
+      .attributeModifier(VisualTheme.text(TextRole.METADATA, true))
       .fontColor(HarmonyTokens.textTertiary())
       .padding({ top: 12, bottom: 6 })
       .backgroundColor(HarmonyTokens.pageBackground())
@@ -425,8 +457,8 @@ export struct RecordingsPage {
       Row({ space: 10 }) {
         if (this.isSelecting) {
           Checkbox({ name: recording.id })
-            .width(44)
-            .height(44)
+            .width(VisualTheme.CONTROL_HEIGHT)
+            .height(VisualTheme.CONTROL_HEIGHT)
             .padding(10)
             .margin(0)
             .select(this.isRecordingSelected(recording.id))
@@ -444,14 +476,13 @@ export struct RecordingsPage {
         Row({ space: 12 }) {
           Column({ space: 5 }) {
             Text(recording.displayName)
-              .fontSize(17)
-              .fontWeight(FontWeight.Medium)
+              .attributeModifier(VisualTheme.text(TextRole.BODY, true))
               .fontColor(HarmonyTokens.textPrimary())
               .maxLines(1)
               .textOverflow({ overflow: TextOverflow.Ellipsis })
             Text(this.showingTrash ? `删除于 ${TimeUtils.formatDateTime(recording.deletedAt)}` :
               `${TimeUtils.formatDateTime(recording.createdAt)} · ${recording.config.formatLabel}`)
-              .fontSize(13)
+              .attributeModifier(VisualTheme.text(TextRole.METADATA))
               .fontColor(HarmonyTokens.textSecondary())
               .maxLines(1)
               .textOverflow({ overflow: TextOverflow.Ellipsis })
@@ -461,16 +492,16 @@ export struct RecordingsPage {
 
           Column({ space: 5 }) {
             Text(TimeUtils.formatDuration(recording.durationMs))
-              .fontSize(14)
-              .fontWeight(FontWeight.Medium)
+              .attributeModifier(VisualTheme.text(TextRole.METADATA, true, true))
               .fontColor(HarmonyTokens.textPrimary())
             Text(FileSizeUtils.format(recording.sizeBytes))
-              .fontSize(12)
+              .attributeModifier(VisualTheme.text(TextRole.CAPTION, false, true))
               .fontColor(HarmonyTokens.textTertiary())
           }
           .alignItems(HorizontalAlign.End)
         }
         .layoutWeight(1)
+        .id(`recording-open-${recording.fileName}`)
         .onClick((): void => {
           if (this.isWorking || this.isConfirming) {
             return;
@@ -486,12 +517,12 @@ export struct RecordingsPage {
         if (!this.showingTrash && !this.isSelecting) {
           Button() {
             SymbolGlyph($r('sys.symbol.ellipsis_circle'))
-              .fontSize(21)
+              .fontSize(VisualTheme.ICON_TOOL)
               .fontColor([HarmonyTokens.textSecondary()])
               .rotate({ angle: 90 })
           }
-            .width(44)
-            .height(44)
+            .width(VisualTheme.CONTROL_HEIGHT)
+            .height(VisualTheme.CONTROL_HEIGHT)
             .backgroundColor('#00000000')
             .borderRadius(20)
             .accessibilityText(`${recording.displayName}的更多操作`)
@@ -512,11 +543,11 @@ export struct RecordingsPage {
         Row({ space: 8 }) {
           Button() {
             SymbolGlyph($r('sys.symbol.arrow_counterclockwise'))
-              .fontSize(18)
+              .fontSize(VisualTheme.ICON_TOOL)
               .fontColor([HarmonyTokens.primary()])
           }
-            .width(44)
-            .height(44)
+            .width(VisualTheme.CONTROL_HEIGHT)
+            .height(VisualTheme.CONTROL_HEIGHT)
             .backgroundColor(HarmonyTokens.primarySubtle())
             .borderRadius(19)
             .accessibilityText('恢复录音')
@@ -529,11 +560,11 @@ export struct RecordingsPage {
             })
           Button() {
             SymbolGlyph($r('sys.symbol.trash'))
-              .fontSize(18)
+              .fontSize(VisualTheme.ICON_TOOL)
               .fontColor([HarmonyTokens.danger()])
           }
-            .width(44)
-            .height(44)
+            .width(VisualTheme.CONTROL_HEIGHT)
+            .height(VisualTheme.CONTROL_HEIGHT)
             .backgroundColor('#00000000')
             .borderRadius(19)
             .accessibilityText('永久删除录音')
@@ -558,14 +589,16 @@ export struct RecordingsPage {
 
   @Builder
   private quickActionsSheet() {
-    Scroll() {
+    // Exclusive subpages must not retain outgoing action rows via exit transitions.
+    Scroll(this.actionScroller) {
       Column({ space: 10 }) {
         if (this.showingConversion) {
           AudioConversionPanel({
             recording: this.conversionRecording,
-            onRunning: (running: boolean): void => { this.isWorking = running; },
-            onBack: (): void => { this.showingConversion = false; },
+            onRunning: (running: boolean): void => { if (!this.disposed) { this.isWorking = running; } },
+            onBack: (): void => { this.actionScroller.scrollTo({ xOffset: 0, yOffset: 0 }); this.showingConversion = false; },
             onComplete: (converted: RecordingInfo): void => {
+              this.isClosingSheet = true;
               this.showQuickActions = false;
               this.loadRecordings(true);
               this.status = `已添加 ${converted.fileName}，原件已保留`;
@@ -573,9 +606,9 @@ export struct RecordingsPage {
           })
         } else {
         Text(this.isQuickRenaming ? '重命名' : this.quickActionDisplayName())
+          .id('library-actions-title')
           .width('100%')
-          .fontSize(20)
-          .fontWeight(FontWeight.Bold)
+          .attributeModifier(VisualTheme.text(TextRole.TITLE, true))
           .fontColor(HarmonyTokens.textPrimary())
           .maxLines(1)
           .textOverflow({ overflow: TextOverflow.Ellipsis })
@@ -583,28 +616,28 @@ export struct RecordingsPage {
 
         if (this.isQuickRenaming) {
           TextInput({ text: this.renameValue, placeholder: '录音名称' })
+            .id('library-rename-input')
             .width('100%')
-            .height(48)
-            .fontSize(16)
+            .height(VisualTheme.INPUT_HEIGHT)
+            .fontSize(VisualTheme.BODY_SIZE)
             .fontColor(HarmonyTokens.textPrimary())
             .placeholderColor(HarmonyTokens.textTertiary())
             .backgroundColor(HarmonyTokens.surfaceSubtle())
             .border({ width: 1, color: HarmonyTokens.primaryBorder() })
-            .borderRadius(14)
+            .borderRadius(16)
             .defaultFocus(true)
             .maxLength(80)
-            .transition(MotionTheme.appear(this.reduceMotion))
             .onChange((value: string): void => {
               this.renameValue = value;
             })
           Row({ space: 10 }) {
             Button() {
               SymbolGlyph($r('sys.symbol.xmark'))
-                .fontSize(20)
+                .fontSize(VisualTheme.ICON_TOOL)
                 .fontColor([HarmonyTokens.textSecondary()])
             }
               .layoutWeight(1)
-              .height(44)
+              .height(VisualTheme.CONTROL_HEIGHT)
               .backgroundColor(HarmonyTokens.surfaceSubtle())
               .borderRadius(16)
               .accessibilityText('取消重命名')
@@ -612,17 +645,16 @@ export struct RecordingsPage {
               .attributeModifier(PressFeedback.button(this.themeMode, this.reduceMotion))
               .animation(MotionTheme.press(this.reduceMotion))
               .onClick((): void => {
-                this.getUIContext().animateTo(MotionTheme.content(), (): void => {
-                  this.isQuickRenaming = false;
-                });
+                this.actionScroller.scrollTo({ xOffset: 0, yOffset: 0 });
+                this.isQuickRenaming = false;
               })
             Button() {
               SymbolGlyph($r('sys.symbol.checkmark'))
-                .fontSize(20)
+                .fontSize(VisualTheme.ICON_TOOL)
                 .fontColor([HarmonyTokens.onPrimary()])
             }
               .layoutWeight(1)
-              .height(44)
+              .height(VisualTheme.CONTROL_HEIGHT)
               .backgroundColor(HarmonyTokens.primary())
               .borderRadius(16)
               .enabled(this.renameValue.trim().length > 0 && !this.isWorking && !this.isConfirming)
@@ -635,12 +667,17 @@ export struct RecordingsPage {
               })
           }
           .width('100%')
-          .transition(MotionTheme.appear(this.reduceMotion))
         } else {
-          this.quickFileAction('保存到文件', (): void => { this.saveQuickToDevice(); })
-          this.quickFileAction('转换格式', (): void => {
+          this.quickFileAction($r('sys.symbol.arrow_down'), '保存到文件', (): void => {
             const recording = this.quickActionRecording();
             if (recording !== undefined) {
+              this.afterQuickActionsDismissed((): void => { this.saveQuickToDevice(recording); });
+            }
+          })
+          this.quickFileAction($r('sys.symbol.waveform'), '转换格式', (): void => {
+            const recording = this.quickActionRecording();
+            if (recording !== undefined) {
+              this.actionScroller.scrollTo({ xOffset: 0, yOffset: 0 });
               this.conversionRecording = recording;
               this.showingConversion = true;
             }
@@ -648,10 +685,10 @@ export struct RecordingsPage {
           Button() {
             Row({ space: 14 }) {
               SymbolGlyph($r('sys.symbol.share'))
-                .fontSize(21)
+                .fontSize(VisualTheme.ICON_TOOL)
                 .fontColor([HarmonyTokens.primary()])
               Text('分享原始文件')
-                .fontSize(16)
+                .attributeModifier(VisualTheme.text(TextRole.BODY))
                 .fontColor(HarmonyTokens.textPrimary())
               Blank()
             }
@@ -659,65 +696,64 @@ export struct RecordingsPage {
           }
             .id('recording_quick_share')
             .width('100%')
-            .height(52)
+            .height(VisualTheme.ACTION_HEIGHT)
             .padding({ left: 16, right: 16 })
             .backgroundColor(HarmonyTokens.surfaceSubtle())
             .borderRadius(16)
             .enabled(!this.isWorking && !this.isConfirming)
-            .transition(MotionTheme.appear(this.reduceMotion))
             .animation(undefined)
             .attributeModifier(PressFeedback.button(this.themeMode, this.reduceMotion))
             .animation(MotionTheme.press(this.reduceMotion))
             .onClick((): void => {
-              this.shareQuickRecording();
+              const recording = this.quickActionRecording();
+              if (recording !== undefined) {
+                this.afterQuickActionsDismissed((): void => { this.shareQuickRecording(recording); });
+              }
             })
           Button() {
             Row({ space: 14 }) {
               SymbolGlyph($r('sys.symbol.square_and_pencil'))
-                .fontSize(21)
+                .fontSize(VisualTheme.ICON_TOOL)
                 .fontColor([HarmonyTokens.primary()])
               Text('重命名')
-                .fontSize(16)
+                .attributeModifier(VisualTheme.text(TextRole.BODY))
                 .fontColor(HarmonyTokens.textPrimary())
               Blank()
             }
             .width('100%')
           }
             .width('100%')
-            .height(52)
+            .height(VisualTheme.ACTION_HEIGHT)
             .padding({ left: 16, right: 16 })
             .backgroundColor(HarmonyTokens.surfaceSubtle())
             .borderRadius(16)
             .enabled(!this.isWorking && !this.isConfirming)
-            .transition(MotionTheme.appear(this.reduceMotion))
             .animation(undefined)
             .attributeModifier(PressFeedback.button(this.themeMode, this.reduceMotion))
             .animation(MotionTheme.press(this.reduceMotion))
             .onClick((): void => {
               this.renameValue = this.quickActionDisplayName();
-              this.getUIContext().animateTo(MotionTheme.content(), (): void => {
-                this.isQuickRenaming = true;
-              });
+              this.actionScroller.scrollTo({ xOffset: 0, yOffset: 0 });
+              this.isQuickRenaming = true;
             })
           Button() {
             Row({ space: 14 }) {
               SymbolGlyph($r('sys.symbol.trash'))
-                .fontSize(21)
+                .fontSize(VisualTheme.ICON_TOOL)
                 .fontColor([HarmonyTokens.danger()])
               Text('移至最近删除')
-                .fontSize(16)
+                .attributeModifier(VisualTheme.text(TextRole.BODY))
                 .fontColor(HarmonyTokens.danger())
               Blank()
             }
             .width('100%')
           }
             .width('100%')
-            .height(52)
+            .height(VisualTheme.ACTION_HEIGHT)
             .padding({ left: 16, right: 16 })
             .backgroundColor(HarmonyTokens.dangerSubtle())
             .borderRadius(16)
             .enabled(!this.isWorking && !this.isConfirming)
-            .transition(MotionTheme.appear(this.reduceMotion))
             .animation(undefined)
             .attributeModifier(PressFeedback.button(this.themeMode, this.reduceMotion))
             .animation(MotionTheme.press(this.reduceMotion))
@@ -735,25 +771,35 @@ export struct RecordingsPage {
     .height('100%')
     .align(Alignment.Top)
     .scrollBar(BarState.Auto)
+    .clip(true)
+    .id('library-actions-sheet')
   }
 
   @Builder
-  private quickFileAction(title: string, action: () => void) {
-    Button(title)
-      .width('100%').height(52).padding({ left: 16, right: 16 })
-      .fontSize(16).fontColor(HarmonyTokens.textPrimary())
+  private quickFileAction(symbol: Resource, title: string, action: () => void) {
+    Button() {
+      Row({ space: 14 }) {
+        SymbolGlyph(symbol)
+          .fontSize(VisualTheme.ICON_TOOL)
+          .fontColor([HarmonyTokens.primary()])
+        Text(title)
+          .attributeModifier(VisualTheme.text(TextRole.BODY))
+          .fontColor(HarmonyTokens.textPrimary())
+        Blank()
+      }
+      .width('100%')
+    }
+      .width('100%').height(VisualTheme.ACTION_HEIGHT).padding({ left: 16, right: 16 })
       .backgroundColor(HarmonyTokens.surfaceSubtle()).borderRadius(16)
+      .id(`library-action-${title}`)
       .enabled(!this.isWorking && !this.isConfirming)
       .attributeModifier(PressFeedback.button(this.themeMode, this.reduceMotion))
       .onClick(action)
   }
 
-  private async saveQuickToDevice(): Promise<void> {
+  private async saveQuickToDevice(recording: RecordingInfo): Promise<void> {
     if (this.isWorking || this.isConfirming) { return; }
-    const recording = this.quickActionRecording();
-    if (recording === undefined) { return; }
     this.isWorking = true;
-    this.showQuickActions = false;
     try {
       const context = this.getUIContext().getHostContext() as common.UIAbilityContext;
       const destination = await ExportService.saveToDevice(context, recording);
@@ -769,17 +815,16 @@ export struct RecordingsPage {
       Row() {
         Column({ space: 4 }) {
           Text('最近删除')
-            .fontSize(16)
-            .fontWeight(FontWeight.Medium)
+            .attributeModifier(VisualTheme.text(TextRole.BODY, true))
             .fontColor(HarmonyTokens.textPrimary())
           Text(this.recentlyDeleted.length > 0 ? `${this.recentlyDeleted.length} 条可恢复录音` : '没有可恢复录音')
-            .fontSize(13)
+            .attributeModifier(VisualTheme.text(TextRole.METADATA))
             .fontColor(HarmonyTokens.textSecondary())
         }
         .alignItems(HorizontalAlign.Start)
         .layoutWeight(1)
         SymbolGlyph($r('sys.symbol.chevron_right'))
-          .fontSize(19)
+          .fontSize(VisualTheme.ICON_TOOL)
           .fontColor([HarmonyTokens.primary()])
       }
       .width('100%')
@@ -802,23 +847,22 @@ export struct RecordingsPage {
   private emptyState() {
     Column({ space: 10 }) {
       SymbolGlyph($r('sys.symbol.waveform'))
-        .fontSize(44)
+        .fontSize(VisualTheme.ICON_EMPTY)
         .fontColor([HarmonyTokens.textTertiary()])
       Text(this.showingTrash ? '最近删除为空' :
         (this.searchQuery.trim().length > 0 ? '没有匹配的录音' : '还没有录音'))
-        .fontSize(15)
-        .fontWeight(FontWeight.Medium)
+        .attributeModifier(VisualTheme.text(TextRole.BODY, true))
         .fontColor(HarmonyTokens.textPrimary())
       if (!this.showingTrash && this.recordings.length === 0) {
         Button() {
           SymbolGlyph($r('sys.symbol.mic_fill'))
-            .fontSize(22)
+            .fontSize(VisualTheme.ICON_SECONDARY)
             .fontColor([HarmonyTokens.onPrimary()])
         }
-          .width(52)
-          .height(52)
+          .width(VisualTheme.SECONDARY_BUTTON)
+          .height(VisualTheme.SECONDARY_BUTTON)
           .backgroundColor(HarmonyTokens.primary())
-          .borderRadius(26)
+          .borderRadius(VisualTheme.SECONDARY_BUTTON / 2)
           .accessibilityText('开始录音')
           .animation(undefined)
           .attributeModifier(PressFeedback.button(this.themeMode, this.reduceMotion))
@@ -900,7 +944,7 @@ export struct RecordingsPage {
   }
 
   private openQuickActions(recording: RecordingInfo): void {
-    if (this.isWorking || this.isConfirming) {
+    if (this.disposed || this.isWorking || this.isConfirming || this.isClosingSheet || this.showQuickActions) {
       return;
     }
     this.quickActionRecordingId = recording.id;
@@ -925,20 +969,14 @@ export struct RecordingsPage {
     return recording === undefined ? '录音操作' : recording.displayName;
   }
 
-  private async shareQuickRecording(): Promise<void> {
+  private async shareQuickRecording(recording: RecordingInfo): Promise<void> {
     if (this.isWorking || this.isConfirming) {
-      return;
-    }
-    const recording = this.quickActionRecording();
-    if (recording === undefined) {
-      this.status = '录音已不可用';
-      this.showQuickActions = false;
       return;
     }
     this.isWorking = true;
     try {
       const context = this.getUIContext().getHostContext() as common.UIAbilityContext;
-      await ShareService.shareRecording(context, recording, 'recording_quick_share');
+      await ShareService.shareRecording(context, recording, `recording-more-${recording.fileName}`);
       this.status = '';
     } catch (error) {
       this.status = '无法打开分享面板';
@@ -961,6 +999,7 @@ export struct RecordingsPage {
     try {
       const context = this.getUIContext().getHostContext() as common.UIAbilityContext;
       RecordingRepository.rename(context, recording, this.renameValue);
+      this.isClosingSheet = true;
       this.showQuickActions = false;
       this.loadRecordings(true);
     } catch (error) {
@@ -971,7 +1010,7 @@ export struct RecordingsPage {
   }
 
   private confirmMoveQuickRecordingToTrash(): void {
-    if (this.isWorking || this.isConfirming) {
+    if (this.disposed || this.isWorking || this.isConfirming || this.isClosingSheet) {
       return;
     }
     const recording = this.quickActionRecording();
@@ -982,20 +1021,37 @@ export struct RecordingsPage {
     // Dismiss the native Sheet before confirmation, so its exit cannot cover the row deletion.
     this.pendingTrashConfirmation = [recording];
     this.isConfirming = true;
+    this.isClosingSheet = true;
     this.showQuickActions = false;
   }
 
   private onQuickActionsDismissed(): void {
+    this.showQuickActions = false;
+    this.isClosingSheet = false;
     this.showingConversion = false;
     this.isQuickRenaming = false;
     this.renameValue = '';
     this.quickActionRecordingId = '';
+    const action = this.pendingSheetAction;
+    this.pendingSheetAction = undefined;
+    if (this.disposed) { this.pendingTrashConfirmation = []; return; }
     if (this.pendingTrashConfirmation.length > 0) {
       const pending = this.pendingTrashConfirmation;
       this.pendingTrashConfirmation = [];
       this.isConfirming = false;
       this.confirmBatch(pending, RecordingBatchAction.MOVE_TO_TRASH);
+    } else if (action !== undefined) {
+      action();
     }
+  }
+
+  private afterQuickActionsDismissed(action: () => void): void {
+    if (this.disposed || this.isWorking || this.isConfirming || this.isClosingSheet || !this.showQuickActions) {
+      return;
+    }
+    this.pendingSheetAction = action;
+    this.isClosingSheet = true;
+    this.showQuickActions = false;
   }
 
   private selectedRecordings(): RecordingInfo[] {
@@ -1029,7 +1085,7 @@ export struct RecordingsPage {
       });
       this.isConfirming = false;
       if (result.index === 1) {
-        this.runBatch(recordings, action);
+        await this.runBatch(recordings, action);
       }
     } catch (error) {
       // The native prompt API rejects with Error('cancel') for Back and mask dismissal.
@@ -1043,14 +1099,14 @@ export struct RecordingsPage {
     }
   }
 
-  private runBatch(recordings: RecordingInfo[], action: RecordingBatchAction): void {
+  private async runBatch(recordings: RecordingInfo[], action: RecordingBatchAction): Promise<void> {
     if (this.isWorking) {
       return;
     }
     this.isWorking = true;
     try {
       const context = this.getUIContext().getHostContext() as common.UIAbilityContext;
-      const result = RecordingRepository.applyBatch(context, recordings, action);
+      const result = await RecordingRepository.applyBatchAsync(context, recordings, action);
       const refreshed = this.loadRecordings(true, false, result.failedIds);
       if (!refreshed) {
         // The filesystem operation already succeeded; do not leave confirmed-deleted rows actionable after a refresh error.
@@ -1081,20 +1137,28 @@ export struct RecordingsPage {
   private filteredRecordings(): RecordingInfo[] {
     const source = this.showingTrash ? this.recentlyDeleted : this.recordings;
     const query = this.searchQuery.trim().toLowerCase();
+    if (this.filteredSource === source && this.filteredQuery === query) { return this.filteredCache; }
+    this.filteredSource = source;
+    this.filteredQuery = query;
     if (query.length === 0) {
-      return source;
+      this.filteredCache = source;
+      return this.filteredCache;
     }
-    return source.filter((recording: RecordingInfo): boolean => {
+    this.filteredCache = source.filter((recording: RecordingInfo): boolean => {
       return recording.displayName.toLowerCase().includes(query) ||
         recording.config.formatLabel.toLowerCase().includes(query);
     });
+    return this.filteredCache;
   }
 
   private libraryRows(): RecordingLibraryRow[] {
     const rows: RecordingLibraryRow[] = [];
     const prefix = this.showingTrash ? 'trash' : 'active';
+    const source = this.filteredRecordings();
+    const key = `${prefix}:${TimeUtils.dateSectionKey(Date.now())}`;
+    if (this.rowsSource === source && this.rowsKey === key) { return this.rowsCache; }
     let previousDay = '';
-    for (const recording of this.filteredRecordings()) {
+    for (const recording of source) {
       const timestamp = this.showingTrash ? recording.deletedAt : recording.createdAt;
       const day = TimeUtils.dateSectionKey(timestamp);
       if (day !== previousDay) {
@@ -1103,7 +1167,10 @@ export struct RecordingsPage {
       }
       rows.push(new RecordingLibraryRow(`${prefix}:recording:${recording.id}`, '', recording));
     }
-    return rows;
+    this.rowsSource = source;
+    this.rowsKey = key;
+    this.rowsCache = rows;
+    return this.rowsCache;
   }
   private palette(): HarmonyPalette {
     return HarmonyTheme.palette(this.themeMode);

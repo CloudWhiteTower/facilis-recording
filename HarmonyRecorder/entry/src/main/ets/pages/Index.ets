@@ -1,4 +1,5 @@
 import { common } from '@kit.AbilityKit';
+import { VisualTheme } from '../utils/VisualTheme';
 import { accessibility } from '@kit.AccessibilityKit';
 import { DividerMode, HdsNavigation, HdsTabs, HdsTabsController } from '@kit.UIDesignKit';
 import { HarmonyPalette, HarmonyTheme, HarmonyTokens, ThemeMode, ThemeStore } from '../utils/HarmonyTheme';
@@ -6,6 +7,8 @@ import { MaterialRole, MaterialTheme } from '../utils/MaterialTheme';
 import { MotionTheme } from '../utils/MotionTheme';
 import { PressFeedback } from '../utils/PressFeedback';
 import { AppPage, NavigationStore } from '../utils/NavigationStore';
+import { ResponsiveLayout } from '../utils/ResponsiveLayout';
+import { ExportService } from '../services/ExportService';
 import { PlayerPage } from './PlayerPage';
 import { RecorderPage } from './RecorderPage';
 import { RecordingsPage } from './RecordingsPage';
@@ -20,9 +23,11 @@ struct Index {
   @StorageLink(MotionTheme.REDUCE_KEY) private reduceMotion: boolean = false;
   @State private highlightedTab: number = 0;
   @State private availableWidth: number = 360;
+  @State private isLandscape: boolean = false;
   private readonly tabsController: HdsTabsController = new HdsTabsController();
   private readonly pageStack: NavPathStack = new NavPathStack();
   private motionObserverRegistered: boolean = false;
+  private pcmShareCacheChecked: boolean = false;
   private readonly onReduceMotionChanged = (reduced: boolean): void => {
     this.getUIContext().runScopedTask((): void => {
       this.reduceMotion = reduced;
@@ -41,6 +46,14 @@ struct Index {
       console.warn(`Read reduced motion preference failed: ${String(error)}`);
     }
     this.applyThemeMode();
+    if (!this.pcmShareCacheChecked) {
+      this.pcmShareCacheChecked = true;
+      const context = this.getUIContext().getHostContext() as common.UIAbilityContext;
+      // Detached once per UI lifetime; switching tabs never repeats directory I/O.
+      ExportService.prunePcmShareCache(context).catch((error: Error): void => {
+        console.error(`Prune expired PCM share cache failed: ${error.message}`);
+      });
+    }
   }
 
   aboutToDisappear(): void {
@@ -81,7 +94,8 @@ struct Index {
         .height('100%')
         .vertical(false)
         .barPosition(BarPosition.End)
-        .scrollable(false)
+        .scrollable(!this.isRecordingActive)
+        .id('primary-tabs')
         .barOverlap(true)
         .barHeight(64)
         .animationDuration(this.reduceMotion ? 0 : MotionTheme.TAB_DURATION_MS)
@@ -89,8 +103,8 @@ struct Index {
         .barFloatingStyle({
           barWidth: {
             smallWidth: Math.min(248, Math.max(180, this.availableWidth - 32)),
-            mediumWidth: Math.min(300, Math.max(180, this.availableWidth - 48)),
-            largeWidth: Math.min(360, Math.max(180, this.availableWidth - 64))
+            mediumWidth: Math.min(this.isLandscape ? 300 : 248, Math.max(180, this.availableWidth - 48)),
+            largeWidth: Math.min(this.isLandscape ? 360 : 248, Math.max(180, this.availableWidth - 64))
           },
           barBottomMargin: 16,
           gradientMask: {
@@ -128,6 +142,10 @@ struct Index {
       if (Number.isFinite(width) && width > 0 && Math.abs(width - this.availableWidth) >= 1) {
         this.availableWidth = width;
       }
+      const height = Number(area.height);
+      if (Number.isFinite(width) && width > 0 && Number.isFinite(height) && height > 0) {
+        this.isLandscape = ResponsiveLayout.usesSplitLayout(width, height);
+      }
     })
   }
 
@@ -155,7 +173,7 @@ struct Index {
       Stack() {
         Column()
           .width(52)
-          .height(44)
+          .height(VisualTheme.CONTROL_HEIGHT)
           .borderRadius(19)
           .backgroundColor(HarmonyTokens.primarySubtle())
           .animation(undefined)
@@ -164,12 +182,12 @@ struct Index {
           .animation(MotionTheme.state(this.reduceMotion))
           .hitTestBehavior(HitTestMode.None)
         SymbolGlyph(symbol)
-          .fontSize(24)
+          .fontSize(VisualTheme.ICON_TAB)
           .fontColor([this.isTabHighlighted(page) ? HarmonyTokens.primary() : HarmonyTokens.textSecondary()])
           .animation(MotionTheme.content(this.reduceMotion))
       }
       .width(64)
-      .height(44)
+      .height(VisualTheme.CONTROL_HEIGHT)
       .alignContent(Alignment.Center)
     }
     .width(Math.min(76, Math.max(48, (this.availableWidth - 48) / 3)))

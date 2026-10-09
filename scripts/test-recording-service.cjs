@@ -12,23 +12,26 @@ const ets = path.join(root, 'HarmonyRecorder/entry/src/main/ets');
 let passed = 0;
 
 function environment() {
-  const files = new Map(), descriptors = new Map(), cache = new Map(), saved = [], notices = [];
+  const files = new Map(), descriptors = new Map(), cache = new Map(), saved = [], notices = [], timers = new Map();
   const state = { now: 1000, nextFd: 10, sequence: 0, activeMic: 0, bgActive: false, capturer: null,
     partialLimit: Infinity, failAfter: Infinity, dataWritten: 0, zeroNext: false, seekFails: false,
     fsyncFails: false, deleteFails: false, bgStartFails: false, blocked: false, unblock: null,
     backgroundCancel: null, pcmMaximum: 0, queueMaximum: 0, amplitude: 0,
     cancelDuringStart: false, cancelDuringPause: false, flacCalls: [], nativeFd: -1,
-    flacCreateFails: false, flacFinishFails: false, stopFailures: 0, releaseFailures: 0 };
+    flacCreateFails: false, flacFinishFails: false, stopFailures: 0, releaseFailures: 0, writeCalls: 0,
+    streamOverride: null, streamInfoFails: false, capturers: [], recorders: [],
+    m4aPausePending: null, m4aPauseResolve: null };
   const recordFile = fd => {
     const handle = descriptors.get(fd);
     assert.ok(handle, 'file descriptor is open');
     return handle;
   };
-  const writeBytes = (fd, bytes) => {
+  const writeBytes = (fd, bytes, options) => {
     const h = recordFile(fd), input = new Uint8Array(bytes);
-    if (h.position < 44) h.file.header.set(input.subarray(0, Math.min(input.length, 44 - h.position)), h.position);
-    h.position += input.length;
-    h.file.size = Math.max(h.file.size, h.position);
+    const position = options?.offset ?? h.position;
+    if (position < 44) h.file.header.set(input.subarray(0, Math.min(input.length, 44 - position)), position);
+    if (options?.offset === undefined) h.position += input.length;
+    h.file.size = Math.max(h.file.size, position + input.length);
     return input.length;
   };
   const io = {
@@ -45,13 +48,14 @@ function environment() {
     lseek(fd, offset) { if (state.seekFails && offset >= 44) throw new Error('EIO seek'); recordFile(fd).position = offset; },
     truncateSync(fd, length) { recordFile(fd).file.size = length; },
     writeSync(fd, bytes) { return writeBytes(fd, bytes); },
-    async write(fd, bytes) {
+    async write(fd, bytes, options) {
       if (state.blocked) await new Promise(resolve => { state.unblock = resolve; });
       if (state.zeroNext) { state.zeroNext = false; return 0; }
-      if (state.dataWritten >= state.failAfter) throw new Error('ENOSPC injected');
-      const count = Math.min(bytes.byteLength, state.partialLimit, state.failAfter - state.dataWritten);
-      const actual = writeBytes(fd, bytes.slice(0, count));
-      state.dataWritten += actual;
+      const payload = options?.offset === undefined;
+      if (payload && state.dataWritten >= state.failAfter) throw new Error('ENOSPC injected');
+      const count = Math.min(bytes.byteLength, state.partialLimit, payload ? state.failAfter - state.dataWritten : Infinity);
+      const actual = writeBytes(fd, bytes.slice(0, count), options);
+      if (payload) { state.dataWritten += actual; state.writeCalls++; }
       return actual;
     },
     async fsync() { if (state.fsyncFails) throw new Error('EIO fsync'); },
@@ -84,11 +88,15 @@ function environment() {
     AudioChannel: { CHANNEL_1: 1 }, AudioSampleFormat: { SAMPLE_FORMAT_S16LE: 16, SAMPLE_FORMAT_S24LE: 24 },
     AudioEncodingType: { ENCODING_TYPE_RAW: 0 }, SourceType: { SOURCE_TYPE_MIC: 0 },
     InterruptHint: { INTERRUPT_HINT_NONE: 0, INTERRUPT_HINT_RESUME: 1 },
-    async createAudioCapturer() {
+    async createAudioCapturer(options) {
       const listeners = new Map();
-      const capturer = { running: false,
+      const capturer = { running: false, released: false, starts: 0,
+        async getStreamInfo() {
+          if (state.streamInfoFails) throw new Error('injected stream-info query failure');
+          return { ...options.streamInfo, ...state.streamOverride };
+        },
         on(name, fn) { listeners.set(name, fn); }, off(name) { listeners.delete(name); },
-        async start() { if (!this.running) state.activeMic++; this.running = true; },
+        async start() { this.starts++; if (!this.running) state.activeMic++; this.running = true; },
         async stop() {
           if (state.stopFailures > 0) { state.stopFailures--; throw new Error('injected capturer stop failure'); }
           if (this.running) state.activeMic--;
@@ -102,27 +110,56 @@ function environment() {
           if (state.releaseFailures > 0) { state.releaseFailures--; throw new Error('injected capturer release failure'); }
           if (this.running) state.activeMic--;
           this.running = false;
+          this.released = true;
         },
         emit(bytes) { if (this.running) listeners.get('readData')?.(bytes); },
         interrupt() { listeners.get('audioInterrupt')?.({ hintType: 2 }); }
       };
       state.capturer = capturer;
+      state.capturers.push(capturer);
       return capturer;
     }
   };
   const media = {
     AudioSourceType: { AUDIO_SOURCE_TYPE_MIC: 0 }, CodecMimeType: { AUDIO_AAC: 0 },
     AacProfile: { AAC_LC: 0 }, ContainerFormatType: { CFT_MPEG_4A: 0 },
+    StateChangeReason: { USER: 1, BACKGROUND: 2 },
     async createAVRecorder() {
       let running = false;
-      return { on() {}, async prepare() {},
-        async start() { running = true; state.activeMic++; },
-        async pause() { if (running) state.activeMic--; running = false; },
-        async resume() { if (!running) state.activeMic++; running = true; },
-        async stop() { if (running) state.activeMic--; running = false; },
-        async release() { if (running) state.activeMic--; running = false; },
+      const listeners = new Map();
+      const recorder = { state: 'idle', listeners, stopCalls: 0, releaseCalls: 0,
+        on(name, callback) { listeners.set(name, callback); }, off(name) { listeners.delete(name); },
+        transition(next, reason = media.StateChangeReason.USER) {
+          this.state = next;
+          listeners.get('stateChange')?.(next, reason);
+        },
+        async prepare() { this.transition('prepared'); },
+        async start() { running = true; state.activeMic++; this.transition('started'); },
+        async pause() {
+          if (running) state.activeMic--;
+          running = false; this.transition('paused');
+          if (state.m4aPausePending) await state.m4aPausePending;
+        },
+        async resume() { if (!running) state.activeMic++; running = true; this.transition('started'); },
+        async stop() {
+          this.stopCalls++;
+          if (this.state !== 'started' && this.state !== 'paused') throw new Error('illegal native stop state');
+          if (running) state.activeMic--;
+          running = false; this.transition('stopped');
+        },
+        async release() {
+          this.releaseCalls++;
+          if (running) state.activeMic--;
+          running = false; this.transition('released');
+        },
+        systemTransition(next) {
+          if (running) state.activeMic--;
+          running = false; this.transition(next, media.StateChangeReason.BACKGROUND);
+        },
         async getAudioCapturerMaxAmplitude() { return 0; }
       };
+      state.recorders.push(recorder);
+      return recorder;
     }
   };
   function load(filename) {
@@ -163,7 +200,8 @@ function environment() {
       throw new Error(`Unexpected import ${name}`);
     }
     new Function('require', 'module', 'exports', 'setInterval', 'clearInterval', compiled)(
-      localRequire, module, module.exports, () => 1, () => {});
+      localRequire, module, module.exports,
+      callback => { const id = timers.size + 1; timers.set(id, callback); return id; }, id => timers.delete(id));
     return module.exports;
   }
   const { RecordingService } = load(path.join(ets, 'services/RecordingService.ets'));
@@ -184,12 +222,71 @@ function environment() {
     if (wait) await settled();
   }
   return { state, files, saved, notices, service, config: RecordingConfig, states: RecordingState, feed, settled,
-    assertReleased() { assert.equal(state.activeMic, 0); assert.equal(state.bgActive, false); assert.equal(descriptors.size, 0); }
+    tick() { for (const callback of [...timers.values()]) callback(); },
+    assertReleased() {
+      assert.equal(state.activeMic, 0); assert.equal(state.bgActive, false); assert.equal(descriptors.size, 0);
+      assert.ok(state.capturers.every(capturer => capturer.released), 'every created capturer was released');
+    }
   };
 }
 
 async function test(name, fn) { await fn(); passed++; console.log(`PASS ${name}`); }
 (async () => {
+  await test('negotiated rate, channels, bit depth and encoding must match before PCM capture starts', async () => {
+    for (const override of [{ samplingRate: 44100 }, { channels: 2 }, { sampleFormat: 16 }, { encodingType: 1 }]) {
+      const e = environment(); e.state.streamOverride = override;
+      await assert.rejects(e.service.start({}, e.config.wav(48000, 24)), /不支持所选录音质量/);
+      assert.equal(e.state.capturer.starts, 0); assert.equal(e.saved.length, 0);
+      assert.equal(e.files.size, 0); assert.equal(e.service.getState(), e.states.IDLE); e.assertReleased();
+    }
+  });
+  await test('stream-info query failure releases the prepared capturer and empty WAV or FLAC output', async () => {
+    for (const config of [e => e.config.wav(), e => e.config.flac()]) {
+      const e = environment(); e.state.streamInfoFails = true;
+      await assert.rejects(e.service.start({}, config(e)), /stream-info query failure/);
+      assert.equal(e.state.capturer.starts, 0); assert.equal(e.files.size, 0);
+      assert.equal(e.saved.length, 0); e.assertReleased();
+    }
+  });
+  await test('an input-format change on resume saves only the previously recorded, valid PCM prefix', async () => {
+    const e = environment(); await e.service.start({}, e.config.wav()); await e.feed(new ArrayBuffer(9600));
+    await e.service.pause(); e.state.streamOverride = { samplingRate: 44100 };
+    await assert.rejects(e.service.resume(), /不支持所选录音质量/); await e.settled();
+    assert.equal(e.state.capturer.starts, 0); assert.equal(e.saved.length, 1);
+    assert.equal(e.saved[0].sizeBytes, 44 + 9600); assert.equal(e.saved[0].durationMs, 100);
+    assert.equal(e.service.getState(), e.states.STOPPED); e.assertReleased();
+  });
+  await test('periodic WAV checkpoints expose only complete, even sample prefixes before stop', async () => {
+    const e = environment(); await e.service.start({}, e.config.wav(48000, 24));
+    for (let index = 0; index < 5; index++) await e.feed(new ArrayBuffer(144000));
+    const file = [...e.files.values()][0];
+    assert.equal(new DataView(file.header.buffer).getUint32(40, true), 720000);
+    await e.feed(new ArrayBuffer(303)); await e.service.pause();
+    assert.equal(new DataView(file.header.buffer).getUint32(40, true), 720300);
+    const result = await e.service.stop();
+    assert.equal(new DataView(file.header.buffer).getUint32(40, true), 720303);
+    assert.equal(result.sizeBytes, 44 + 720304); e.assertReleased();
+  });
+  await test('queued packets are coalesced without losing samples or extending the memory bound', async () => {
+    const e = environment(); await e.service.start({}, e.config.wav()); e.state.blocked = true;
+    for (let index = 0; index < 15; index++) await e.feed(new ArrayBuffer(9600), false);
+    e.state.blocked = false; e.state.unblock(); await e.settled();
+    const result = await e.service.stop();
+    assert.equal(result.sizeBytes, 44 + 15 * 9600);
+    assert.ok(e.state.writeCalls < 15); e.assertReleased();
+  });
+  await test('a stalled PCM source saves its committed prefix, while pause does not trigger the watchdog', async () => {
+    const e = environment(); await e.service.start({}, e.config.wav()); await e.feed(new ArrayBuffer(9600));
+    await e.service.pause(); e.state.now += 6000; e.tick(); await e.settled();
+    assert.equal(e.service.getState(), e.states.PAUSED);
+    await e.service.resume(); e.state.now += 5000; e.tick(); await e.settled();
+    assert.equal(e.saved.length, 1); assert.equal(e.saved[0].durationMs, 100); e.assertReleased();
+  });
+  await test('a detached observer cannot interrupt capture or committed saves', async () => {
+    const e = environment(); e.service.setObserver(() => { throw new Error('detached view'); });
+    await e.service.start({}, e.config.wav()); await e.feed(new ArrayBuffer(9600));
+    const result = await e.service.stop(); assert.equal(result.durationMs, 100); e.assertReleased();
+  });
   await test('accelerated 2-hour WAV stream has exact committed bytes and sample duration, with bounded memory', async () => {
     const e = environment();
     await e.service.start({}, e.config.wav());
@@ -288,6 +385,61 @@ async function test(name, fn) { await fn(); passed++; console.log(`PASS ${name}`
     await e.service.resume(); e.state.now += 2000;
     const result = await e.service.stop(); assert.equal(result.durationMs, 3000);
     assert.equal(e.notices.length, 0); e.assertReleased();
+  });
+  await test('system-stopped M4A finalizes promptly without a duplicate native stop', async () => {
+    const e = environment(); await e.service.start({}, e.config.aac(128000));
+    e.state.now += 30000;
+    const recorder = e.state.recorders[0]; recorder.systemTransition('stopped');
+    await e.settled();
+    assert.equal(e.service.getState(), e.states.STOPPED);
+    assert.equal(e.saved.length, 1); assert.equal(e.saved[0].durationMs, 30000);
+    assert.equal(recorder.stopCalls, 0); assert.equal(recorder.releaseCalls, 1);
+    assert.equal(recorder.listeners.size, 0); e.assertReleased();
+  });
+  await test('system-paused M4A saves the interrupted prefix and clears its background lease', async () => {
+    const e = environment(); await e.service.start({}, e.config.aac(128000)); e.state.now += 8000;
+    const recorder = e.state.recorders[0]; recorder.systemTransition('paused'); await e.settled();
+    assert.equal(e.saved.length, 1); assert.equal(e.saved[0].durationMs, 8000);
+    assert.equal(recorder.stopCalls, 1); assert.equal(e.service.getState(), e.states.STOPPED);
+    e.assertReleased();
+  });
+  await test('M4A error state without an error callback releases native resources without an illegal stop', async () => {
+    const e = environment(); await e.service.start({}, e.config.aac(128000));
+    const recorder = e.state.recorders[0]; recorder.systemTransition('error'); await e.settled();
+    assert.equal(recorder.stopCalls, 0); assert.equal(recorder.releaseCalls, 1);
+    assert.equal(e.service.getState(), e.states.STOPPED);
+    assert.ok(e.notices.some(message => message.includes('错误状态'))); e.assertReleased();
+  });
+  await test('user M4A pause, resume and stop events never masquerade as a system interruption', async () => {
+    const e = environment(); await e.service.start({}, e.config.aac(128000)); e.state.now += 1000;
+    await e.service.pause(); await e.settled();
+    assert.equal(e.saved.length, 0); assert.equal(e.service.getState(), e.states.PAUSED);
+    assert.equal(e.state.bgActive, false);
+    e.state.now += 60000; await e.service.resume(); e.state.now += 2000;
+    const saved = await e.service.stop(); await e.settled();
+    assert.equal(saved.durationMs, 3000); assert.equal(e.saved.length, 1);
+    assert.equal(e.state.recorders[0].stopCalls, 1); assert.equal(e.notices.length, 0); e.assertReleased();
+  });
+  await test('late state and error callbacks from a released M4A cannot stop its replacement', async () => {
+    const e = environment(); await e.service.start({}, e.config.aac(128000));
+    const old = e.state.recorders[0];
+    const lateState = old.listeners.get('stateChange'), lateError = old.listeners.get('error');
+    await e.service.stop(); await e.service.start({}, e.config.aac(128000));
+    lateState('stopped', 2); lateError({ code: 5400103 }); await e.settled();
+    assert.equal(e.saved.length, 1); assert.equal(e.service.getState(), e.states.RECORDING);
+    assert.equal(e.state.activeMic, 1); assert.equal(e.state.bgActive, true);
+    assert.equal(old.listeners.size, 0); await e.service.stop(); e.assertReleased();
+  });
+  await test('system M4A interruption during a pending pause freezes time and defers saving safely', async () => {
+    const e = environment(); await e.service.start({}, e.config.aac(128000)); e.state.now += 2000;
+    e.state.m4aPausePending = new Promise(resolve => { e.state.m4aPauseResolve = resolve; });
+    const pausing = e.service.pause();
+    for (let pass = 0; pass < 10; pass++) await Promise.resolve();
+    e.state.recorders[0].systemTransition('stopped'); e.state.now += 30000;
+    assert.equal(e.service.getDuration(), 2000); assert.equal(e.saved.length, 0);
+    e.state.m4aPauseResolve(); await pausing; await e.settled();
+    assert.equal(e.saved.length, 1); assert.equal(e.saved[0].durationMs, 2000);
+    assert.equal(e.state.recorders[0].stopCalls, 0); e.assertReleased();
   });
   await test('system cancellation received during start or pause is deferred and never lost', async () => {
     const starting = environment(); starting.state.cancelDuringStart = true;

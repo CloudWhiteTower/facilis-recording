@@ -14,6 +14,8 @@ import { BackgroundRecordingTask } from './BackgroundRecordingTask';
 export type RecordingObserver = (snapshot: RecordingSnapshot) => void;
 
 export class RecordingService {
+  private static readonly PCM_STALL_TIMEOUT_MS: number = 5000;
+  private static readonly WAV_CHECKPOINT_SECONDS: number = 5;
   private static instance: RecordingService | undefined = undefined;
   private state: RecordingState = RecordingState.IDLE;
   private durationMs: number = 0;
@@ -29,6 +31,7 @@ export class RecordingService {
   private readonly backgroundTask: BackgroundRecordingTask = new BackgroundRecordingTask();
 
   private avRecorder: media.AVRecorder | undefined = undefined;
+  private avRecorderGeneration: number = 0;
   private avFile: fileIo.File | undefined = undefined;
   private amplitudeTimerId: number = -1;
   private amplitudeReadPromise: Promise<void> | undefined = undefined;
@@ -42,6 +45,8 @@ export class RecordingService {
   private pcmWriteQueue: Array<ArrayBuffer> = [];
   private pcmWritePromise: Promise<void> | undefined = undefined;
   private pcmWriteFailure: string = '';
+  private pcmCheckpointBytes: number = 0;
+  private lastPcmPacketAt: number = 0;
   private flacHandle: number = -1;
   private liveSizeBytes: number = 0;
   private waveformSamples: number[] = [];
@@ -134,6 +139,7 @@ export class RecordingService {
         if (this.activeConfig.format !== RecordingFormat.M4A) {
           await this.disposePcmCapturer(true);
           await this.flushPcmWrites();
+          await this.checkpointWav(this.activeConfig, true);
         } else if (this.avRecorder !== undefined) {
           await this.stopAmplitudePolling();
           await this.avRecorder.pause();
@@ -344,10 +350,27 @@ export class RecordingService {
     }
     this.avFile = fileIo.openSync(this.activeRecording.filePath,
       fileIo.OpenMode.READ_WRITE | fileIo.OpenMode.CREATE | fileIo.OpenMode.TRUNC);
+    const generation = ++this.avRecorderGeneration;
     const recorder = await media.createAVRecorder();
     this.avRecorder = recorder;
+    recorder.on('stateChange', (state: media.AVRecorderState, reason: media.StateChangeReason): void => {
+      if (this.avRecorder !== recorder || this.avRecorderGeneration !== generation) {
+        return;
+      }
+      if (state === 'error' || (reason === media.StateChangeReason.BACKGROUND &&
+        (state === 'paused' || state === 'stopped'))) {
+        // Native system transitions are not guaranteed to emit an error event.
+        // Freeze the clock before a busy user operation defers finalization.
+        this.durationMs = this.getCurrentDuration();
+        this.accumulatedDurationMs = this.durationMs;
+        this.segmentStartedAt = 0;
+        this.stopDurationTimer();
+        this.requestStop(state === 'error' ? '录音器进入错误状态，已停止采集。' :
+          '麦克风录音被系统或其他应用中断。');
+      }
+    });
     recorder.on('error', (error): void => {
-      if (this.avRecorder === recorder) {
+      if (this.avRecorder === recorder && this.avRecorderGeneration === generation) {
         this.requestStop(`录音器错误：${error.code}`);
       }
     });
@@ -371,9 +394,15 @@ export class RecordingService {
     await this.stopAmplitudePolling();
     const recorder = this.avRecorder;
     this.avRecorder = undefined;
+    this.avRecorderGeneration += 1;
     let failure = '';
     if (recorder !== undefined) {
-      try { await recorder.stop(); } catch (error) { failure = String(error); }
+      this.detachM4aListeners(recorder);
+      // A system interruption can already have stopped the instance. Calling
+      // stop again is illegal and must not turn its completed file into an error.
+      if (recorder.state === 'started' || recorder.state === 'paused') {
+        try { await recorder.stop(); } catch (error) { failure = String(error); }
+      }
       try { await recorder.release(); } catch (error) {
         this.avRecorder = recorder;
         failure = failure || String(error);
@@ -388,6 +417,11 @@ export class RecordingService {
     }
   }
 
+  private detachM4aListeners(recorder: media.AVRecorder): void {
+    try { recorder.off('stateChange'); } catch (error) { console.warn(String(error)); }
+    try { recorder.off('error'); } catch (error) { console.warn(String(error)); }
+  }
+
   private async startPcm(config: RecordingConfig): Promise<void> {
     PcmStreamUtils.blockAlign(config);
     if (this.activeRecording === undefined) {
@@ -400,6 +434,7 @@ export class RecordingService {
     this.pcmWriteQueue = [];
     this.pcmWritePromise = undefined;
     this.pcmWriteFailure = '';
+    this.pcmCheckpointBytes = 0;
     if (config.format === RecordingFormat.FLAC) {
       this.flacHandle = await flac.create(this.pcmFile.fd, config.sampleRate, config.channels);
     } else {
@@ -413,18 +448,28 @@ export class RecordingService {
     if (this.pcmFile === undefined || this.pcmWriteFailure.length > 0) {
       throw new Error('PCM output file is unavailable.');
     }
+    const expected: audio.AudioStreamInfo = {
+      samplingRate: config.sampleRate === 44100 ? audio.AudioSamplingRate.SAMPLE_RATE_44100 :
+        audio.AudioSamplingRate.SAMPLE_RATE_48000,
+      channels: audio.AudioChannel.CHANNEL_1,
+      sampleFormat: config.bitDepth === 24 ? audio.AudioSampleFormat.SAMPLE_FORMAT_S24LE :
+        audio.AudioSampleFormat.SAMPLE_FORMAT_S16LE,
+      encodingType: audio.AudioEncodingType.ENCODING_TYPE_RAW
+    };
     const capturer = await audio.createAudioCapturer({
-      streamInfo: {
-        samplingRate: config.sampleRate === 44100 ? audio.AudioSamplingRate.SAMPLE_RATE_44100 :
-          audio.AudioSamplingRate.SAMPLE_RATE_48000,
-        channels: audio.AudioChannel.CHANNEL_1,
-        sampleFormat: config.bitDepth === 24 ? audio.AudioSampleFormat.SAMPLE_FORMAT_S24LE :
-          audio.AudioSampleFormat.SAMPLE_FORMAT_S16LE,
-        encodingType: audio.AudioEncodingType.ENCODING_TYPE_RAW
-      },
+      streamInfo: expected,
       capturerInfo: { source: audio.SourceType.SOURCE_TYPE_MIC, capturerFlags: 0 }
     });
+    // Retain ownership before querying so every failure still releases the handle.
+    // PCM headers and native encoders must describe the stream we actually receive,
+    // including when a new capturer is created after pause or an input-route change.
     this.pcmCapturer = capturer;
+    const actual = await capturer.getStreamInfo();
+    if (actual.samplingRate !== expected.samplingRate || actual.channels !== expected.channels ||
+      actual.sampleFormat !== expected.sampleFormat || actual.encodingType !== expected.encodingType) {
+      throw new Error('当前音频输入不支持所选录音质量，请切换采样率或位深后重试。');
+    }
+    this.lastPcmPacketAt = this.monotonicNow();
     const callback = (buffer: ArrayBuffer): void => {
       if (this.pcmCapturer !== capturer || this.pcmFile === undefined ||
         this.pendingStopReason.length > 0 || this.pcmWriteFailure.length > 0 || buffer.byteLength === 0) {
@@ -432,6 +477,7 @@ export class RecordingService {
       }
       this.enqueuePcmPacket(buffer, config);
       const now = this.monotonicNow();
+      this.lastPcmPacketAt = now;
       if (now - this.lastWaveformSampleAt >= this.waveformSampleIntervalMs) {
         this.lastWaveformSampleAt = now;
         this.waveformSamples = WaveformUtils.appendSample(this.waveformSamples,
@@ -501,7 +547,7 @@ export class RecordingService {
   private async drainPcmWriteQueue(config: RecordingConfig): Promise<void> {
     try {
       while (this.pcmWriteQueue.length > 0 && this.pcmFile !== undefined && this.pcmWriteFailure.length === 0) {
-        const packet = this.pcmWriteQueue.shift();
+        const packet = PcmStreamUtils.takeWriteBatch(this.pcmWriteQueue);
         if (packet === undefined) { continue; }
         if (config.format === RecordingFormat.FLAC) {
           await flac.write(this.flacHandle, packet);
@@ -517,6 +563,7 @@ export class RecordingService {
             this.pcmDataBytes += count;
             this.pcmPendingBytes -= count;
           }
+          await this.checkpointWav(config);
         }
       }
     } catch (error) {
@@ -531,6 +578,28 @@ export class RecordingService {
     while (this.pcmWritePromise !== undefined) {
       await this.pcmWritePromise;
     }
+  }
+
+  private async checkpointWav(config: RecordingConfig, force: boolean = false): Promise<void> {
+    const file = this.pcmFile;
+    if (config.format !== RecordingFormat.WAV || file === undefined) { return; }
+    const align = PcmStreamUtils.blockAlign(config);
+    // An even-byte, complete-sample prefix is readable without inserting a
+    // RIFF pad into the ongoing stream (especially 24-bit mono recordings).
+    const prefix = Math.floor(this.pcmDataBytes / (align * 2)) * align * 2;
+    if (prefix <= this.pcmCheckpointBytes || (!force &&
+      prefix - this.pcmCheckpointBytes < config.sampleRate * align * RecordingService.WAV_CHECKPOINT_SECONDS)) {
+      return;
+    }
+    const header = WaveFileUtils.createPcmHeader(config, prefix);
+    const cursor = new PcmWriteCursor(header.byteLength);
+    while (cursor.remaining > 0) {
+      const count = await fileIo.write(file.fd, cursor.offset === 0 ? header : header.slice(cursor.offset),
+        { offset: cursor.offset });
+      cursor.advance(count);
+    }
+    await fileIo.fsync(file.fd);
+    this.pcmCheckpointBytes = prefix;
   }
 
   private async finishPcm(config: RecordingConfig): Promise<void> {
@@ -577,7 +646,9 @@ export class RecordingService {
     await this.stopAmplitudePolling();
     const recorder = this.avRecorder;
     this.avRecorder = undefined;
+    this.avRecorderGeneration += 1;
     if (recorder !== undefined) {
+      this.detachM4aListeners(recorder);
       try { await recorder.release(); } catch (error) {
         this.avRecorder = recorder;
         console.error(String(error));
@@ -682,8 +753,14 @@ export class RecordingService {
   private startDurationTimer(): void {
     this.stopDurationTimer();
     this.timerId = setInterval((): void => {
+      if (this.state === RecordingState.RECORDING && this.activeConfig !== undefined &&
+        this.activeConfig.format !== RecordingFormat.M4A &&
+        this.monotonicNow() - this.lastPcmPacketAt >= RecordingService.PCM_STALL_TIMEOUT_MS) {
+        this.requestStop('音频采集长时间未返回数据，已停止并保存可用部分。');
+        return;
+      }
       this.durationMs = this.getCurrentDuration();
-      this.liveSizeBytes = this.getCurrentFileSize();
+      this.liveSizeBytes = this.getCurrentFileSize(true);
       this.notify('');
     }, 250);
   }
@@ -694,16 +771,22 @@ export class RecordingService {
 
   private notify(message: string): void {
     if (this.observer !== undefined) {
-      this.observer(new RecordingSnapshot(this.state, this.getCurrentDuration(), this.getCurrentFileSize(),
-        this.waveformSamples.slice(), message));
+      try {
+        this.observer(new RecordingSnapshot(this.state, this.getCurrentDuration(), this.getCurrentFileSize(),
+          this.waveformSamples, message));
+      } catch (error) {
+        // UI teardown or a failing listener cannot interrupt the microphone
+        // callback, lose accepted PCM, or turn a saved take into a failure.
+        console.error(`Recording observer failed: ${String(error)}`);
+      }
     }
   }
 
-  private getCurrentFileSize(): number {
+  private getCurrentFileSize(refresh: boolean = false): number {
     if (this.activeConfig !== undefined && this.activeConfig.format === RecordingFormat.WAV) {
       return WaveFileUtils.HEADER_LENGTH + this.pcmDataBytes;
     }
-    if (this.activeRecording !== undefined) {
+    if (refresh && this.activeRecording !== undefined) {
       try { this.liveSizeBytes = fileIo.statSync(this.activeRecording.filePath).size; } catch (error) {
         // The encoder may create its header only after its first encoded frame.
       }

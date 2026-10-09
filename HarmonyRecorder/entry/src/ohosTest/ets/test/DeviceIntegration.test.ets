@@ -13,6 +13,15 @@ function delay(ms: number): Promise<void> {
   return new Promise((resolve: () => void): void => { setTimeout(resolve, ms); });
 }
 
+async function swipePrimaryPage(driver: Driver, forward: boolean): Promise<void> {
+  const bounds = await (await driver.waitForComponent(ON.id('primary-tabs'), 5000)).getBounds();
+  const left = Math.round(bounds.left + (bounds.right - bounds.left) * 0.2);
+  const right = Math.round(bounds.left + (bounds.right - bounds.left) * 0.8);
+  const middle = Math.round(bounds.top + (bounds.bottom - bounds.top) * 0.45);
+  await driver.swipe(forward ? right : left, middle, forward ? left : right, middle, 1200);
+  await delay(700);
+}
+
 function writeAll(fd: number, data: ArrayBuffer): void {
   let offset = 0;
   while (offset < data.byteLength) {
@@ -201,11 +210,24 @@ export default function deviceIntegrationTest() {
           for (const rotation of [DisplayRotation.ROTATION_0, DisplayRotation.ROTATION_90]) {
             await driver.setDisplayRotation(rotation);
             await delay(1500);
+            await (await driver.waitForComponent(ON.id('tab-0'), 5000)).click();
+            await delay(500);
             expect(await driver.screenCap(`${screenshots}/facilis-recorder-${rotation}.png`)).assertTrue();
             const button = await driver.findComponent(ON.id('record-start'));
             expect(button !== null).assertTrue();
             const quality = await driver.findComponent(ON.id('record-quality'));
             expect(quality !== null).assertTrue();
+            const stage = await (await driver.findComponent(ON.id('recording-stage'))).getBounds();
+            const controls = await (await driver.findComponent(ON.id('record-controls'))).getBounds();
+            const viewport = await (await driver.findComponent(ON.id('primary-tabs'))).getBounds();
+            const tab = await (await driver.findComponent(ON.id('tab-0'))).getBounds();
+            expect(stage.top >= viewport.top && stage.bottom <= viewport.bottom).assertTrue();
+            expect(controls.top >= viewport.top && controls.bottom <= viewport.bottom).assertTrue();
+            expect(controls.bottom <= tab.top).assertTrue();
+            if (viewport.right - viewport.left <= viewport.bottom - viewport.top) {
+              expect(controls.top >= stage.bottom).assertTrue();
+            }
+            expect(await driver.findComponent(ON.text('录音')) === null).assertTrue();
             await quality.click();
             await delay(700);
             expect(await driver.screenCap(`${screenshots}/facilis-quality-${rotation}.png`)).assertTrue();
@@ -214,6 +236,83 @@ export default function deviceIntegrationTest() {
         } finally {
           await driver.setDisplayRotation(original);
         }
+      });
+
+      it('swipes between all primary pages and back in both display orientations', 0, async () => {
+        const delegator = abilityDelegatorRegistry.getAbilityDelegator();
+        await delegator.startAbility({ bundleName: 'com.example.harmonyrecorder', abilityName: 'EntryAbility' });
+        const driver = Driver.create();
+        const original = await driver.getDisplayRotation();
+        try {
+          for (const rotation of [DisplayRotation.ROTATION_0, DisplayRotation.ROTATION_90]) {
+            await driver.setDisplayRotation(rotation);
+            await delay(1500);
+            await (await driver.waitForComponent(ON.id('tab-0'), 5000)).click();
+            await delay(500);
+            await swipePrimaryPage(driver, true);
+            expect(await driver.waitForComponent(ON.id('recordings-list'), 5000) !== null).assertTrue();
+            await swipePrimaryPage(driver, true);
+            expect(await driver.waitForComponent(ON.id('settings-appearance'), 5000) !== null).assertTrue();
+            expect(await driver.screenCap(`${delegator.getAppContext().cacheDir}/facilis-swipe-${rotation}.png`)).assertTrue();
+            await swipePrimaryPage(driver, false);
+            expect(await driver.waitForComponent(ON.id('recordings-list'), 5000) !== null).assertTrue();
+            await swipePrimaryPage(driver, false);
+            expect(await driver.waitForComponent(ON.id('record-start'), 5000) !== null).assertTrue();
+          }
+        } finally {
+          await driver.setDisplayRotation(original);
+          await (await driver.waitForComponent(ON.id('tab-0'), 5000)).click();
+        }
+      });
+    });
+  }
+  if (parameters['playerLayout'] === 'true' || parameters['-s playerLayout'] === 'true') {
+    describe('responsivePlayerLayout', () => {
+      it('keeps a real recording readable and playable in both orientations', 0, async () => {
+        const delegator = abilityDelegatorRegistry.getAbilityDelegator();
+        await delegator.startAbility({ bundleName: 'com.example.harmonyrecorder', abilityName: 'EntryAbility' });
+        const context = (await delegator.getCurrentTopAbility()).context;
+        const driver = Driver.create();
+        const original = await driver.getDisplayRotation();
+        const previous = RecordingRepository.list(context).map((item: RecordingInfo): string => item.id).sort();
+        const temporary = `${context.cacheDir}/visual_player_${Date.now()}.wav`;
+        let recording: RecordingInfo | undefined = undefined;
+        try {
+          // A cached opt-in microphone fixture, never a historical user recording.
+          fileIo.copyFileSync(`${delegator.getAppContext().cacheDir}/v3-validation/microphone.wav`, temporary);
+          const metadata = AudioFileUtils.read(temporary, 'wav');
+          if (metadata === undefined) { throw new Error('Run the capture fixtures before playerLayout'); }
+          recording = RecordingRepository.importCompletedFile(context, temporary, metadata.config, 'Facilis');
+          await (await driver.waitForComponent(ON.id('tab-1'), 5000)).click();
+          await (await driver.waitForComponent(ON.text(recording.displayName), 5000)).click();
+          for (const rotation of [DisplayRotation.ROTATION_0, DisplayRotation.ROTATION_90]) {
+            await driver.setDisplayRotation(rotation); await delay(1500);
+            const size = await driver.getDisplaySize();
+            const controls = await (await driver.waitForComponent(ON.id('player-controls'), 5000)).getBounds();
+            const timeline = await (await driver.waitForComponent(ON.id('player-timeline'), 5000)).getBounds();
+            const overview = await (await driver.waitForComponent(ON.id('player-overview'), 5000)).getBounds();
+            expect(controls.left >= 0 && controls.right <= size.x && controls.bottom <= size.y).assertTrue();
+            expect(timeline.bottom <= controls.top).assertTrue();
+            if (size.x <= size.y) { expect(overview.bottom <= timeline.top).assertTrue(); }
+            const play = await driver.waitForComponent(ON.id('player-toggle'), 5000);
+            expect(await play.isEnabled()).assertTrue();
+            await play.click(); await delay(600);
+            await (await driver.findComponent(ON.id('player-toggle'))).click();
+            expect(await driver.screenCap(`${delegator.getAppContext().cacheDir}/facilis-player-${rotation}.png`))
+              .assertTrue();
+          }
+        } finally {
+          if (await driver.findComponent(ON.id('player-toggle')) !== null) { await driver.pressBack(); }
+          await driver.setDisplayRotation(original);
+          if (recording !== undefined) {
+            RecordingRepository.permanentlyDelete(context, RecordingRepository.moveToRecentlyDeleted(context, recording));
+          }
+          if (fileIo.accessSync(temporary)) { fileIo.unlinkSync(temporary); }
+          const tab = await driver.findComponent(ON.id('tab-0'));
+          if (tab !== null) { await tab.click(); }
+        }
+        expect(RecordingRepository.list(context).map((item: RecordingInfo): string => item.id).sort().join('|'))
+          .assertEqual(previous.join('|'));
       });
     });
   }
@@ -235,8 +334,17 @@ export default function deviceIntegrationTest() {
         let positionMs = 0;
         let message = '';
         let timeoutId = -1;
+        let isReady = false;
+        let isPlaying = false;
+        let loaded = false;
+        let expectedDurationMs = 0;
+        let targetMs = -1;
+        let seekSucceeded = false;
+        let phase = 'copy';
         player.setObserver((ready: boolean, playing: boolean, position: number,
           duration: number, error: string): void => {
+          isReady = ready;
+          isPlaying = playing;
           positionMs = position;
           durationMs = duration;
           if (error.length > 0) { message = error; }
@@ -245,23 +353,43 @@ export default function deviceIntegrationTest() {
           await fileIo.copyFile(playbackFile, temporaryPath);
           const metadata = AudioFileUtils.read(temporaryPath, extension);
           if (metadata === undefined) { throw new Error('Requested playback fixture has invalid metadata'); }
+          expectedDurationMs = metadata.durationMs;
           selected = RecordingRepository.importCompletedFile(context, temporaryPath, metadata.config, 'PlaybackCheck');
-          await Promise.race([
+          phase = 'load';
+          const inspected = await Promise.race([
             player.load(selected, context),
             new Promise<void>((resolve: () => void, reject: (reason: Error) => void): void => {
               timeoutId = setTimeout((): void => { reject(new Error('Saved recording prepare timeout')); }, 10000);
             })
           ]);
+          loaded = inspected !== undefined;
+          console.info(`SAVED_PLAYBACK_LOAD loaded=${loaded} ready=${isReady} playing=${isPlaying} ` +
+            `metadataDurationMs=${expectedDurationMs} playerDurationMs=${durationMs} positionMs=${positionMs} message=${message}`);
+          phase = 'duration';
           expect(durationMs > 3000).assertTrue();
           const duration = durationMs;
+          phase = 'play';
           await player.toggle();
           for (const target of [0, Math.floor(duration / 2), duration - 2000]) {
-            expect(await player.seek(target)).assertTrue();
+            targetMs = target;
+            phase = 'seek';
+            seekSucceeded = await player.seek(target);
+            console.info(`SAVED_PLAYBACK_SEEK targetMs=${targetMs} success=${seekSucceeded} ` +
+              `ready=${isReady} playing=${isPlaying} positionMs=${positionMs} durationMs=${durationMs} message=${message}`);
+            expect(seekSucceeded).assertTrue();
+            phase = 'position';
             await delay(1200);
+            console.info(`SAVED_PLAYBACK_POSITION targetMs=${targetMs} positionMs=${positionMs} ` +
+              `ready=${isReady} playing=${isPlaying} durationMs=${durationMs} message=${message}`);
             expect(message).assertEqual('');
             expect(positionMs > target + 100).assertTrue();
             console.info(`SAVED_PLAYBACK targetMs=${target} positionMs=${positionMs} durationMs=${duration}`);
           }
+        } catch (error) {
+          throw new Error(`Saved playback failed at ${phase}: loaded=${loaded}, ready=${isReady}, playing=${isPlaying}, ` +
+            `metadataDurationMs=${expectedDurationMs}, playerDurationMs=${durationMs}, targetMs=${targetMs}, ` +
+            `positionMs=${positionMs}, seekSucceeded=${seekSucceeded}, message=${message || '(none)'}, ` +
+            `cause=${(error as Error).message || String(error)}`);
         } finally {
           if (timeoutId >= 0) { clearTimeout(timeoutId); }
           await player.release();

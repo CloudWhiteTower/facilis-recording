@@ -9,6 +9,7 @@ export class AudioConversionService {
   private static sequence: number = 0;
   private handle: number = 0;
   private cancelled: boolean = false;
+  private lastProgress: number = -1;
 
   cancel(): void {
     this.cancelled = true;
@@ -30,6 +31,7 @@ export class AudioConversionService {
     }
     AudioConversionService.busy = true;
     this.cancelled = false;
+    this.lastProgress = -1;
     let source: fileIo.File | undefined = undefined;
     let output: fileIo.File | undefined = undefined;
     let temporaryPath = '';
@@ -134,8 +136,11 @@ export class AudioConversionService {
   }
 
   private reportProgress(onProgress: (progress: number) => void, progress: number): void {
+    const next = Math.max(this.lastProgress, Math.floor(progress * 1000) / 1000);
+    if (next === this.lastProgress) { return; }
+    this.lastProgress = next;
     try {
-      onProgress(progress);
+      onProgress(next);
     } catch (error) {
       // A detached UI callback must not turn a committed import into a reported
       // conversion failure or interrupt native/file cleanup.

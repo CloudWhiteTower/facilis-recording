@@ -1,4 +1,5 @@
 import { common } from '@kit.AbilityKit';
+import { TextRole, VisualTheme } from '../utils/VisualTheme';
 import { BusinessError } from '@kit.BasicServicesKit';
 import {
   HdsNavDestination,
@@ -29,6 +30,8 @@ export struct PlayerPage {
   @State private status: string = '';
   @State private displayName: string = '';
   @State private isWide: boolean = false;
+  @State private isSplitLayout: boolean = false;
+  @State private isCompactLandscape: boolean = false;
   @State private availableWidth: number = 360;
   @State private availableHeight: number = 640;
   @State private isRenaming: boolean = false;
@@ -37,6 +40,7 @@ export struct PlayerPage {
   @State private isConfirming: boolean = false;
   @State private isPreparing: boolean = false;
   @State private showActionSheet: boolean = false;
+  @State private isClosingSheet: boolean = false;
   @State private showingConversion: boolean = false;
   @StorageLink(ThemeStore.MODE_KEY) private themeMode: number = ThemeMode.LIGHT;
   @StorageLink(MotionTheme.REDUCE_KEY) private reduceMotion: boolean = false;
@@ -46,8 +50,12 @@ export struct PlayerPage {
   private seekTargetMs: number = 0;
   private seekGuardUntilMs: number = 0;
   private pendingTrashConfirmation: boolean = false;
+  private pendingSheetAction: (() => void) | undefined = undefined;
+  private readonly actionScroller: Scroller = new Scroller();
+  private disposed: boolean = false;
 
   aboutToAppear(): void {
+    this.disposed = false;
     this.recording = RecordingSelectionStore.getSelected();
     this.displayName = this.recording.displayName;
     this.playbackService.setObserver((isReady: boolean, isPlaying: boolean, positionMs: number,
@@ -88,6 +96,9 @@ export struct PlayerPage {
   }
 
   aboutToDisappear(): void {
+    this.disposed = true;
+    this.pendingSheetAction = undefined;
+    this.pendingTrashConfirmation = false;
     this.isScrubbing = false;
     this.seekGuardUntilMs = 0;
     this.playbackService.setObserver(undefined);
@@ -99,13 +110,13 @@ export struct PlayerPage {
       Stack({ alignContent: Alignment.Bottom }) {
         Scroll() {
           Column() {
-            if (this.availableWidth >= 840) {
-              Row({ space: 40 }) {
+            if (this.isSplitLayout) {
+              Row({ space: this.isCompactLandscape ? 24 : 40 }) {
                 Column() {
                   this.recordingOverview()
                 }
                 .layoutWeight(1)
-                Column({ space: 28 }) {
+                Column({ space: this.isCompactLandscape ? 16 : 28 }) {
                   this.playbackTimeline()
                   this.playerBar()
                 }
@@ -113,10 +124,10 @@ export struct PlayerPage {
               }
               .width('100%')
               .alignItems(VerticalAlign.Center)
-              .padding({ top: 36, bottom: 36 })
+              .padding({ top: this.isCompactLandscape ? 12 : 36, bottom: this.isCompactLandscape ? 12 : 36 })
             } else {
-              Column({ space: this.isWide ? 30 : 24 }) {
-                Blank().height(this.isWide ? 24 : 12)
+              Column({ space: 24 }) {
+                Blank().height(12)
                 this.recordingOverview()
                 Divider().color(HarmonyTokens.divider())
                 this.playbackTimeline()
@@ -126,7 +137,7 @@ export struct PlayerPage {
             }
           }
           .width(ResponsiveLayout.contentWidth(this.isWide))
-          .constraintSize({ maxWidth: this.availableWidth >= 840 ? 1120 : 720 })
+          .constraintSize({ maxWidth: this.isSplitLayout ? 1120 : 720 })
           .padding({
             left: ResponsiveLayout.horizontalPadding(this.isWide),
             right: ResponsiveLayout.horizontalPadding(this.isWide)
@@ -136,7 +147,7 @@ export struct PlayerPage {
         .height('100%')
         .scrollBar(BarState.Off)
 
-        if (this.availableWidth < 840) {
+        if (!this.isSplitLayout) {
           this.playerBar()
         }
       }
@@ -186,15 +197,24 @@ export struct PlayerPage {
       if (Number.isFinite(height) && height > 0 && Math.abs(height - this.availableHeight) >= 1) {
         this.availableHeight = height;
       }
+      this.isSplitLayout = ResponsiveLayout.usesSplitLayout(this.availableWidth, this.availableHeight);
+      this.isCompactLandscape = this.isSplitLayout && this.availableHeight < 520;
     })
     .bindSheet($$this.showActionSheet, this.actionsSheet(), {
       height: this.isWide ? Math.min(560, Math.max(180, this.availableHeight - 80)) : SheetSize.LARGE,
       width: this.isWide ? Math.min(560, this.availableWidth - 48) : '100%',
       preferType: this.isWide ? SheetType.CENTER : SheetType.BOTTOM,
+      mode: SheetMode.OVERLAY,
       dragBar: true,
       showClose: false,
       backgroundColor: HarmonyTokens.glassSurface(),
       blurStyle: BlurStyle.COMPONENT_THICK,
+      onWillDismiss: (action: DismissSheetAction): void => {
+        if (!this.isWorking && !this.isConfirming && !this.isClosingSheet) {
+          this.isClosingSheet = true;
+          action.dismiss();
+        }
+      },
       onDisappear: (): void => {
         this.onActionsSheetDismissed();
       }
@@ -206,10 +226,11 @@ export struct PlayerPage {
       content: {
         icon: $r('sys.symbol.ellipsis_circle'),
         label: '更多录音操作',
-        isEnabled: this.recording.filePath.length > 0 && !this.isWorking && !this.isConfirming && !this.isPreparing,
+        isEnabled: this.recording.filePath.length > 0 && !this.isWorking && !this.isConfirming && !this.isPreparing &&
+          !this.showActionSheet && !this.isClosingSheet,
         componentId: 'recording_actions',
         action: (): void => {
-          if (!this.isWorking && !this.isConfirming && !this.isPreparing) {
+          if (!this.isWorking && !this.isConfirming && !this.isPreparing && !this.showActionSheet && !this.isClosingSheet) {
             this.showActionSheet = true;
           }
         }
@@ -219,47 +240,47 @@ export struct PlayerPage {
 
   @Builder
   private recordingOverview() {
-    Column({ space: 12 }) {
+    Column({ space: this.isCompactLandscape ? 8 : 12 }) {
       Stack({ alignContent: Alignment.Center }) {
         Circle()
-          .width(this.isWide ? 180 : 150)
-          .height(this.isWide ? 180 : 150)
+          .width(this.isCompactLandscape ? 100 : this.isSplitLayout ? 180 : 150)
+          .height(this.isCompactLandscape ? 100 : this.isSplitLayout ? 180 : 150)
           .fill(HarmonyTokens.primaryGlow())
           .blur(38)
           .opacity(0.42)
         Column()
-          .width(this.isWide ? 116 : 96)
-          .height(this.isWide ? 116 : 96)
+          .width(this.isCompactLandscape ? 72 : this.isSplitLayout ? 116 : 96)
+          .height(this.isCompactLandscape ? 72 : this.isSplitLayout ? 116 : 96)
           .attributeModifier(MaterialTheme.surface(MaterialRole.CONTROL, this.themeMode))
-          .borderRadius(this.isWide ? 58 : 48)
+          .borderRadius(this.isCompactLandscape ? 36 : this.isSplitLayout ? 58 : 48)
         SymbolGlyph($r('sys.symbol.waveform'))
-          .fontSize(this.isWide ? 48 : 40)
+          .fontSize(this.isCompactLandscape ? 32 : this.isSplitLayout ? 48 : 40)
           .fontColor([HarmonyTokens.primary()])
       }
       .width('100%')
-      .height(this.isWide ? 164 : 136)
+      .height(this.isCompactLandscape ? 88 : this.isSplitLayout ? 164 : 136)
 
       Text(this.displayName)
-        .fontSize(this.isWide ? 32 : 27)
-        .fontWeight(FontWeight.Medium)
+        .attributeModifier(VisualTheme.text(this.isCompactLandscape ? TextRole.HERO_COMPACT :
+          this.isSplitLayout ? TextRole.HERO_WIDE : TextRole.HERO))
         .fontColor(HarmonyTokens.textPrimary())
         .maxLines(2)
         .textOverflow({ overflow: TextOverflow.Ellipsis })
       Row({ space: 10 }) {
         Text(this.recording.config.formatLabel)
-          .fontSize(14)
-          .fontWeight(FontWeight.Medium)
+          .attributeModifier(VisualTheme.text(TextRole.METADATA, true))
           .fontColor(HarmonyTokens.primary())
         Text(this.qualityTitle())
-          .fontSize(14)
+          .attributeModifier(VisualTheme.text(TextRole.METADATA))
           .fontColor(HarmonyTokens.textSecondary())
       }
       Text(`${TimeUtils.formatDateTime(this.recording.createdAt)} · ${FileSizeUtils.format(this.recording.sizeBytes)}`)
-        .fontSize(13)
+        .attributeModifier(VisualTheme.text(TextRole.METADATA))
         .fontColor(HarmonyTokens.textTertiary())
     }
     .width('100%')
     .alignItems(HorizontalAlign.Center)
+    .id('player-overview')
   }
 
   @Builder
@@ -267,7 +288,7 @@ export struct PlayerPage {
     Column({ space: 12 }) {
       if (this.status.length > 0) {
         Text(this.status)
-          .fontSize(13)
+          .attributeModifier(VisualTheme.text(TextRole.METADATA))
           .fontColor(HarmonyTokens.textSecondary())
           .width('100%')
           .textAlign(TextAlign.Center)
@@ -275,6 +296,8 @@ export struct PlayerPage {
       }
       if (!this.isReady && !this.isPreparing && this.recording.filePath.length > 0) {
         Button('重新打开录音')
+          .height(VisualTheme.CONTROL_HEIGHT)
+          .fontSize(VisualTheme.BODY_SIZE)
           .enabled(!this.isWorking && !this.isConfirming)
           .onClick((): void => {
             this.preparePlayback();
@@ -299,16 +322,17 @@ export struct PlayerPage {
 
       Row() {
         Text(TimeUtils.formatDuration(this.positionMs))
-          .fontSize(13)
+          .attributeModifier(VisualTheme.text(TextRole.METADATA, false, true))
           .fontColor(HarmonyTokens.textSecondary())
         Blank()
         Text(TimeUtils.formatDuration(this.durationMs))
-          .fontSize(13)
+          .attributeModifier(VisualTheme.text(TextRole.METADATA, false, true))
           .fontColor(HarmonyTokens.textSecondary())
       }
       .width('100%')
     }
     .width(this.contentFocusWidth())
+    .id('player-timeline')
   }
 
   @Builder
@@ -317,21 +341,21 @@ export struct PlayerPage {
       Column() {
         Blank()
       }
-      .width(98)
-      .height(92)
+      .width(VisualTheme.PRIMARY_PLATE)
+      .height(VisualTheme.PRIMARY_PLATE)
       .attributeModifier(MaterialTheme.surface(MaterialRole.CONTROL, this.themeMode))
-      .borderRadius(46)
+      .borderRadius(VisualTheme.PRIMARY_PLATE / 2)
 
       Button() {
         Stack({ alignContent: Alignment.Center }) {
           if (this.isPlaying) {
             SymbolGlyph($r('sys.symbol.pause_fill'))
-              .fontSize(28)
+              .fontSize(VisualTheme.ICON_PRIMARY)
               .fontColor([HarmonyTokens.onPrimary()])
               .transition(MotionTheme.appear(this.reduceMotion))
           } else {
             SymbolGlyph($r('sys.symbol.play_fill'))
-              .fontSize(28)
+              .fontSize(VisualTheme.ICON_PRIMARY)
               .fontColor([HarmonyTokens.onPrimary()])
               .transition(MotionTheme.appear(this.reduceMotion))
           }
@@ -339,10 +363,10 @@ export struct PlayerPage {
         .width(32)
         .height(32)
       }
-      .width(72)
-      .height(72)
+      .width(VisualTheme.PRIMARY_BUTTON)
+      .height(VisualTheme.PRIMARY_BUTTON)
       .backgroundColor(HarmonyTokens.primary())
-      .borderRadius(36)
+      .borderRadius(VisualTheme.PRIMARY_BUTTON / 2)
       .enabled(this.isReady && !this.isWorking && !this.isConfirming)
       .animation(undefined)
       .attributeModifier(PressFeedback.button(this.themeMode, this.reduceMotion, true))
@@ -354,29 +378,32 @@ export struct PlayerPage {
       })
     }
     .width(148)
-    .height(116)
-    .margin({ bottom: this.isWide ? 30 : 20 })
+    .height(this.isCompactLandscape ? VisualTheme.COMPACT_CONTROL_SLOT : VisualTheme.CONTROL_SLOT)
+    .margin({ bottom: this.isSplitLayout ? 0 : 20 })
+    .id('player-controls')
   }
 
   @Builder
   private actionsSheet() {
-    Scroll() {
+    // Exclusive subpages must not retain outgoing action rows via exit transitions.
+    Scroll(this.actionScroller) {
       Column({ space: 10 }) {
         if (this.showingConversion) {
           AudioConversionPanel({
             recording: this.recording,
-            onRunning: (running: boolean): void => { this.isWorking = running; },
-            onBack: (): void => { this.showingConversion = false; },
+            onRunning: (running: boolean): void => { if (!this.disposed) { this.isWorking = running; } },
+            onBack: (): void => { this.actionScroller.scrollTo({ xOffset: 0, yOffset: 0 }); this.showingConversion = false; },
             onComplete: (converted: RecordingInfo): void => {
               this.status = `已添加 ${converted.fileName}，原件已保留`;
+              this.isClosingSheet = true;
               this.showActionSheet = false;
             }
           })
         } else {
         Text(this.isRenaming ? '重命名' : this.recording.displayName)
+          .id('player-actions-title')
           .width('100%')
-          .fontSize(20)
-          .fontWeight(FontWeight.Bold)
+          .attributeModifier(VisualTheme.text(TextRole.TITLE, true))
           .fontColor(HarmonyTokens.textPrimary())
           .maxLines(1)
           .textOverflow({ overflow: TextOverflow.Ellipsis })
@@ -384,9 +411,10 @@ export struct PlayerPage {
 
         if (this.isRenaming) {
           TextInput({ text: this.renameValue, placeholder: '录音名称' })
+            .id('player-rename-input')
             .width('100%')
-            .height(48)
-            .fontSize(16)
+            .height(VisualTheme.INPUT_HEIGHT)
+            .fontSize(VisualTheme.BODY_SIZE)
             .fontColor(HarmonyTokens.textPrimary())
             .placeholderColor(HarmonyTokens.textTertiary())
             .backgroundColor(HarmonyTokens.surfaceSubtle())
@@ -394,43 +422,37 @@ export struct PlayerPage {
             .borderRadius(16)
             .defaultFocus(true)
             .maxLength(80)
-            .transition(MotionTheme.appear(this.reduceMotion))
             .onChange((value: string): void => {
               this.renameValue = value;
             })
           Row({ space: 10 }) {
             this.sheetIconButton($r('sys.symbol.xmark'), '取消重命名', false, (): void => {
-              this.getUIContext().animateTo(MotionTheme.content(), (): void => {
-                this.isRenaming = false;
-              });
+              this.actionScroller.scrollTo({ xOffset: 0, yOffset: 0 });
+              this.isRenaming = false;
             })
             this.sheetIconButton($r('sys.symbol.checkmark'), '保存名称', true, (): void => {
               this.saveRename();
             })
           }
           .width('100%')
-          .transition(MotionTheme.appear(this.reduceMotion))
         } else {
           this.actionRow($r('sys.symbol.arrow_down'), '保存到文件', false, (): void => {
-            this.saveToDevice();
+            this.afterActionsSheetDismissed((): void => { this.saveToDevice(); });
           })
           this.actionRow($r('sys.symbol.waveform'), '转换格式', false, (): void => {
             this.openConversion();
           })
           this.actionRow($r('sys.symbol.share'), '分享原始文件', false, (): void => {
-            this.showActionSheet = false;
-            this.shareOriginal();
+            this.afterActionsSheetDismissed((): void => { this.shareOriginal(); });
           })
           this.actionRow($r('sys.symbol.square_and_pencil'), '重命名', false, (): void => {
             this.renameValue = this.recording.displayName;
-            this.getUIContext().animateTo(MotionTheme.content(), (): void => {
-              this.isRenaming = true;
-            });
+            this.actionScroller.scrollTo({ xOffset: 0, yOffset: 0 });
+            this.isRenaming = true;
           })
           if (this.recording.config.format === RecordingFormat.WAV) {
             this.actionRow($r('sys.symbol.waveform'), '导出原始 PCM（无文件头）', false, (): void => {
-              this.showActionSheet = false;
-              this.exportPcmAndShare();
+              this.afterActionsSheetDismissed((): void => { this.exportPcmAndShare(); });
             })
           }
           Divider().color(HarmonyTokens.divider())
@@ -448,6 +470,8 @@ export struct PlayerPage {
     .height('100%')
     .align(Alignment.Top)
     .scrollBar(BarState.Auto)
+    .clip(true)
+    .id('player-actions-sheet')
   }
 
   @Builder
@@ -455,25 +479,25 @@ export struct PlayerPage {
     Button() {
       Row({ space: 14 }) {
         SymbolGlyph(symbol)
-          .fontSize(21)
+          .fontSize(VisualTheme.ICON_TOOL)
           .fontColor([danger ? HarmonyTokens.danger() : HarmonyTokens.primary()])
         Text(title)
-          .fontSize(16)
+          .attributeModifier(VisualTheme.text(TextRole.BODY))
           .fontColor(danger ? HarmonyTokens.danger() : HarmonyTokens.textPrimary())
         Blank()
       }
       .width('100%')
     }
     .width('100%')
-    .height(52)
+    .height(VisualTheme.ACTION_HEIGHT)
     .padding({ left: 16, right: 16 })
     .backgroundColor(danger ? HarmonyTokens.dangerSubtle() : HarmonyTokens.surfaceSubtle())
     .borderRadius(16)
+    .id(`player-action-${title}`)
     .enabled(!this.isWorking && !this.isConfirming)
     .animation(undefined)
     .attributeModifier(PressFeedback.button(this.themeMode, this.reduceMotion))
     .animation(MotionTheme.press(this.reduceMotion))
-    .transition(MotionTheme.appear(this.reduceMotion))
     .onClick(action)
   }
 
@@ -481,11 +505,11 @@ export struct PlayerPage {
   private sheetIconButton(symbol: Resource, label: string, primary: boolean, action: () => void) {
     Button() {
       SymbolGlyph(symbol)
-        .fontSize(20)
+        .fontSize(VisualTheme.ICON_TOOL)
         .fontColor([primary ? HarmonyTokens.onPrimary() : HarmonyTokens.textSecondary()])
     }
     .layoutWeight(1)
-    .height(44)
+    .height(VisualTheme.CONTROL_HEIGHT)
     .backgroundColor(primary ? HarmonyTokens.primary() : HarmonyTokens.surfaceSubtle())
     .borderRadius(18)
     .enabled(!this.isWorking && !this.isConfirming)
@@ -562,19 +586,22 @@ export struct PlayerPage {
   }
 
   private async openConversion(): Promise<void> {
-    if (this.isWorking || this.isConfirming) { return; }
+    if (this.isWorking || this.isConfirming || this.isClosingSheet || !this.showActionSheet) { return; }
+    this.isWorking = true;
     try {
       if (this.isPlaying) { await this.playbackService.toggle(); }
-      this.showingConversion = true;
+      if (!this.disposed && this.showActionSheet && !this.isClosingSheet) {
+        this.actionScroller.scrollTo({ xOffset: 0, yOffset: 0 });
+        this.showingConversion = true;
+      }
     } catch (error) {
-      this.status = (error as Error).message || '无法暂停播放';
-    }
+      if (!this.disposed) { this.status = (error as Error).message || '无法暂停播放'; }
+    } finally { if (!this.disposed) { this.isWorking = false; } }
   }
 
   private async saveToDevice(): Promise<void> {
     if (this.isWorking || this.isConfirming) { return; }
     this.isWorking = true;
-    this.showActionSheet = false;
     try {
       const context = this.getUIContext().getHostContext() as common.UIAbilityContext;
       const destination = await ExportService.saveToDevice(context, this.recording);
@@ -593,7 +620,7 @@ export struct PlayerPage {
       const context = this.getUIContext().getHostContext() as common.UIAbilityContext;
       const exported = await ExportService.exportWavAsPcm(context, this.recording);
       await ShareService.shareAudioFile(context, exported.filePath, exported.fileName, 'recording_actions');
-      this.status = `已导出 ${FileSizeUtils.format(exported.sizeBytes)} PCM`;
+      this.status = '已生成 PCM，请在系统分享面板选择分享方式。';
     } catch (error) {
       this.status = (error as Error).message || '导出 PCM 失败';
     } finally {
@@ -612,6 +639,7 @@ export struct PlayerPage {
       RecordingSelectionStore.select(this.recording);
       this.displayName = this.recording.displayName;
       this.isRenaming = false;
+      this.isClosingSheet = true;
       this.showActionSheet = false;
       this.status = '';
     } catch (error) {
@@ -622,22 +650,40 @@ export struct PlayerPage {
   }
 
   private requestMoveToTrash(): void {
-    if (this.isWorking || this.isConfirming || this.isPreparing) {
+    if (this.disposed || this.isWorking || this.isConfirming || this.isPreparing || this.isClosingSheet) {
       return;
     }
     this.pendingTrashConfirmation = true;
     this.isConfirming = true;
+    this.isClosingSheet = true;
     this.showActionSheet = false;
   }
 
   private onActionsSheetDismissed(): void {
+    this.showActionSheet = false;
+    this.isClosingSheet = false;
     this.isRenaming = false;
     this.showingConversion = false;
+    const action = this.pendingSheetAction;
+    this.pendingSheetAction = undefined;
+    if (this.disposed) { this.pendingTrashConfirmation = false; return; }
     if (this.pendingTrashConfirmation) {
       this.pendingTrashConfirmation = false;
       this.isConfirming = false;
       this.confirmMoveToTrash();
+    } else if (action !== undefined) {
+      action();
     }
+  }
+
+  private afterActionsSheetDismissed(action: () => void): void {
+    if (this.disposed || this.isWorking || this.isConfirming || this.isClosingSheet || !this.showActionSheet) {
+      return;
+    }
+    // Native overlays share a layer. Open a picker/share only after the Sheet's exit animation.
+    this.pendingSheetAction = action;
+    this.isClosingSheet = true;
+    this.showActionSheet = false;
   }
 
   private async confirmMoveToTrash(): Promise<void> {
@@ -708,7 +754,12 @@ export struct PlayerPage {
   }
 
   private async backToList(): Promise<void> {
-    if (this.isWorking || this.isConfirming) {
+    if (this.isWorking || this.isConfirming || this.isClosingSheet) {
+      return;
+    }
+    if (this.showActionSheet) {
+      this.isClosingSheet = true;
+      this.showActionSheet = false;
       return;
     }
     this.isWorking = true;

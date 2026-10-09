@@ -1,0 +1,122 @@
+[
+  {
+    "file": "native_48000_13861.flac",
+    "sample_rate": 48000,
+    "samples": 13861,
+    "encoded_bytes": 32498,
+    "pcm_bytes": 27722,
+    "pcm_sha256": "2d9e721699297711f7654b9b3bd7ab682ca0067b1b27e758497d1f43f025e6a1",
+    "bit_exact": true,
+    "streaminfo_samples_exact": true
+  },
+  {
+    "file": "native_44100_13861.flac",
+    "sample_rate": 44100,
+    "samples": 13861,
+    "encoded_bytes": 32498,
+    "pcm_bytes": 27722,
+    "pcm_sha256": "2d9e721699297711f7654b9b3bd7ab682ca0067b1b27e758497d1f43f025e6a1",
+    "bit_exact": true,
+    "streaminfo_samples_exact": true
+  },
+  {
+    "file": "native_48000_137.flac",
+    "sample_rate": 48000,
+    "samples": 137,
+    "encoded_bytes": 8573,
+    "pcm_bytes": 274,
+    "pcm_sha256": "126baf3eb4b635f6cad25f6ba455406973286ac7f8b1d80cd99bd8ce3f8b6049",
+    "bit_exact": true,
+    "streaminfo_samples_exact": true
+  },
+  {
+    "file": "native_48000_4608.flac",
+    "sample_rate": 48000,
+    "samples": 4608,
+    "encoded_bytes": 16350,
+    "pcm_bytes": 9216,
+    "pcm_sha256": "f3fde77494c5ffe4d2d02d21fac2c158827d93dfd5ed19bf8ad0bd75c1b9a0ab",
+    "bit_exact": true,
+    "streaminfo_samples_exact": true
+  },
+  {
+    "file": "native_48000_4609.flac",
+    "sample_rate": 48000,
+    "samples": 4609,
+    "encoded_bytes": 16362,
+    "pcm_bytes": 9218,
+    "pcm_sha256": "91adda0202ac0ed952e39f14013924462023b5bcb774abf32d8636cc6c7a608f",
+    "bit_exact": true,
+    "streaminfo_samples_exact": true
+  },
+  {
+    "file": "native_44100_137.flac",
+    "sample_rate": 44100,
+    "samples": 137,
+    "encoded_bytes": 8573,
+    "pcm_bytes": 274,
+    "pcm_sha256": "126baf3eb4b635f6cad25f6ba455406973286ac7f8b1d80cd99bd8ce3f8b6049",
+    "bit_exact": true,
+    "streaminfo_samples_exact": true
+  },
+  {
+    "file": "native_48000_1.flac",
+    "sample_rate": 48000,
+    "samples": 1,
+    "encoded_bytes": 8319,
+    "pcm_bytes": 2,
+    "pcm_sha256": "085edad400785fca7e7e90b1fac4beb776fc2beee5aa24352d5f39b5d57efcad",
+    "bit_exact": true,
+    "streaminfo_samples_exact": true
+  },
+  {
+    "file": "native_48000_15.flac",
+    "sample_rate": 48000,
+    "samples": 15,
+    "encoded_bytes": 8360,
+    "pcm_bytes": 30,
+    "pcm_sha256": "592cebbd04bfc32491615243f29db06ada673bf01cd1372f6d2b753ce2ab0122",
+    "bit_exact": true,
+    "streaminfo_samples_exact": true
+  },
+  {
+    "file": "native_48000_16.flac",
+    "sample_rate": 48000,
+    "samples": 16,
+    "encoded_bytes": 8363,
+    "pcm_bytes": 32,
+    "pcm_sha256": "e17ad77bc96d79cb553d08aaf7405eb9b5f4f419130bcd88e6be9ca005262f01",
+    "bit_exact": true,
+    "streaminfo_samples_exact": true
+  },
+  {
+    "file": "native_44100_17.flac",
+    "sample_rate": 44100,
+    "samples": 17,
+    "encoded_bytes": 8363,
+    "pcm_bytes": 34,
+    "pcm_sha256": "eda5f13ac4f5931546c7baf3e77873c7040ae578c43c7e91f23a908afff32cc0",
+    "bit_exact": true,
+    "streaminfo_samples_exact": true
+  },
+  {
+    "file": "native_48000_4609_silence.flac",
+    "sample_rate": 48000,
+    "samples": 4609,
+    "encoded_bytes": 8330,
+    "pcm_bytes": 9218,
+    "pcm_sha256": "dbb1078ce9c4816f3b0b9b1f7aa95414a819997604657c89ebaf33800185129c",
+    "bit_exact": true,
+    "streaminfo_samples_exact": true
+  },
+  {
+    "file": "native_44100_13861_constant.flac",
+    "sample_rate": 44100,
+    "samples": 13861,
+    "encoded_bytes": 8352,
+    "pcm_bytes": 27722,
+    "pcm_sha256": "e44f6764d50cce549a8bf3e9734ae1bb7d7ba25ddbd6984f3948643dd2d89994",
+    "bit_exact": true,
+    "streaminfo_samples_exact": true
+  }
+]

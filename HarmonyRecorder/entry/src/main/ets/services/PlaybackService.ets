@@ -12,6 +12,7 @@ export type PlaybackObserver = (isReady: boolean, isPlaying: boolean, positionMs
 export class PlaybackService {
   private static readonly PREPARE_TIMEOUT_MS: number = 15000;
   private static readonly SEEK_TIMEOUT_MS: number = 8000;
+  private static readonly CONTROL_TIMEOUT_MS: number = 8000;
   private player: media.AVPlayer | undefined = undefined;
   private sourceFile: fileIo.File | undefined = undefined;
   private observer: PlaybackObserver | undefined = undefined;
@@ -134,7 +135,7 @@ export class PlaybackService {
     this.notify('');
     try {
       if (player.state === 'playing') {
-        await player.pause();
+        await this.withControlDeadline(player.pause(), player, generation);
         return;
       }
       const pendingSeek = player.state === 'completed' ? this.seek(0) : this.pendingSeek;
@@ -144,7 +145,7 @@ export class PlaybackService {
       if (!this.isCurrent(player, generation)) {
         return;
       }
-      await player.play();
+      await this.withControlDeadline(player.play(), player, generation);
     } catch (error) {
       if (!this.isCurrent(player, generation)) {
         return;
@@ -156,6 +157,26 @@ export class PlaybackService {
       if (generation === this.generation) {
         this.controlPending = false;
       }
+    }
+  }
+
+  private async withControlDeadline(operation: Promise<void>, player: media.AVPlayer,
+    generation: number): Promise<void> {
+    let timer = -1;
+    try {
+      await Promise.race([operation, new Promise<void>((resolve: () => void, reject: (error: Error) => void): void => {
+        timer = setTimeout((): void => {
+          const message = '播放控制超时，请重新打开录音后重试';
+          reject(new Error(message));
+          if (this.isCurrent(player, generation)) {
+            // Detach before a late native play/pause completion can revive this
+            // instance or leave every subsequent button press blocked.
+            this.releaseResources(message);
+          }
+        }, PlaybackService.CONTROL_TIMEOUT_MS);
+      })]);
+    } finally {
+      if (timer >= 0) { clearTimeout(timer); }
     }
   }
 
@@ -421,7 +442,11 @@ export class PlaybackService {
       this.message = message;
     }
     if (this.observer !== undefined) {
-      this.observer(this.isReady, this.isPlaying, this.positionMs, this.durationMs, this.message);
+      try {
+        this.observer(this.isReady, this.isPlaying, this.positionMs, this.durationMs, this.message);
+      } catch (error) {
+        console.error(`Playback observer failed: ${String(error)}`);
+      }
     }
   }
 }

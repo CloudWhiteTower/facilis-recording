@@ -1,0 +1,49 @@
+{
+  "date": "2026-10-08",
+  "version": "3.0.0",
+  "device": {
+    "model": "MatePad Air",
+    "api": 24,
+    "physical": true
+  },
+  "deviceTests": {
+    "run": 80,
+    "pass": 80,
+    "failure": 0,
+    "error": 0,
+    "unit": 57,
+    "integration": 23
+  },
+  "wavSoak": {
+    "wallClockTargetSeconds": 600,
+    "testElapsedMs": 603502,
+    "sampleRateHz": 48000,
+    "bitDepth": 16,
+    "channels": 1,
+    "samples": 28831680,
+    "audioDurationMs": 600660,
+    "fileBytes": 57663404,
+    "checkpointHeaderValid": true,
+    "playbackPassed": true,
+    "recordingCoreUnchangedAfterSoak": true
+  },
+  "hostChecks": {
+    "regressions": 185,
+    "nativePcm": 5,
+    "independentReporter": 7
+  },
+  "independentDecode": {
+    "files": 66,
+    "losslessComparisons": 9,
+    "aacTailAndPrimingChecks": 17,
+    "additionalNativeFlacBitExactFiles": 12,
+    "failures": 0
+  },
+  "userRecordingsPreserved": true,
+  "crashLogsFound": false,
+  "testedNativeLibrarySha256": {
+    "arm64-v8a": "7e352fcc985d8322da35493a7331e1529a5aaf67ccf246616021d20454142914",
+    "x86_64": "8b5b8d10273db5c7f82f611c6bc06a08d853e27ae32e9571aa04092327515823"
+  },
+  "powerTimeoutRestoredMs": 600000
+}
